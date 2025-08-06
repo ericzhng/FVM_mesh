@@ -25,6 +25,7 @@ class Mesh:
         self.node_coords = np.array([])
         self.elem_conn = []  # Use a list to support mixed element types
         self.elem_types = {}
+        self.elem_type_ids = np.array([])  # Stores the type ID for each element
 
         # derived - boundary
         self.boundary_faces_nodes = np.array([])
@@ -67,6 +68,7 @@ class Mesh:
 
         all_elem_tags = []
         all_elem_conn = []
+        all_elem_type_ids = []
         elem_type_counter = 0
 
         for i, e_type in enumerate(elem_types):
@@ -85,11 +87,13 @@ class Mesh:
 
                 all_elem_tags.append(tags)
                 all_elem_conn.extend(conn.tolist())
+                all_elem_type_ids.extend([elem_type_counter] * len(tags))
                 elem_type_counter += 1
 
         if all_elem_tags:
             self.elem_tags = np.concatenate(all_elem_tags)
             self.elem_conn = all_elem_conn
+            self.elem_type_ids = np.array(all_elem_type_ids)
             self.nelem = len(self.elem_tags)
         else:
             self.elem_tags = np.array([])
@@ -371,18 +375,10 @@ class Mesh:
         print(f"Number of Elements: {self.nelem}")
 
         if self.nelem > 0:
-            elem_type_counts = {}
-            for conn in self.elem_conn:
-                num_nodes = len(conn)
-                elem_type_counts[num_nodes] = elem_type_counts.get(num_nodes, 0) + 1
-
-            type_str = ", ".join(
-                [
-                    f"{count} x {nnodes}-node"
-                    for nnodes, count in elem_type_counts.items()
-                ]
-            )
-            print(f"Element Types: {type_str}")
+            print("Element Types:")
+            for type_id, type_info in self.elem_types.items():
+                count = np.sum(self.elem_type_ids == type_id)
+                print(f"  - {type_info['name']}: {count} elements")
 
             quality = self.get_mesh_quality()
             avg_quality = np.mean(quality)
@@ -406,6 +402,7 @@ class Mesh:
             "node_coords": self.node_coords,
             "elem_tags": self.elem_tags,
             "elem_conn": self.elem_conn,
+            "elem_type_ids": self.elem_type_ids,
             "cell_volumes": self.cell_volumes,
             "cell_centroids": self.cell_centroids,
             "cell_neighbors": self.cell_neighbors,
@@ -421,6 +418,7 @@ class Mesh:
 def plot_mesh(mesh: Mesh):
     """
     Visualizes the computational mesh, including element and node labels, and face normals.
+    For mixed meshes, different element types are shown in different colors.
 
     This function is useful for debugging and verifying the mesh structure.
 
@@ -438,17 +436,29 @@ def plot_mesh(mesh: Mesh):
     node_tag_map = np.full(max_tag + 1, -1, dtype=np.int32)
     node_tag_map[mesh.node_tags] = np.arange(mesh.nnode, dtype=np.int32)
 
+    # Create a color map for different element types
+    num_types = len(mesh.elem_types)
+    if num_types > 1:
+        elem_type_colors = plt.cm.get_cmap('viridis', num_types)
+        colors = [elem_type_colors(i) for i in range(num_types)]
+    else:
+        colors = ['blue']
+
     for i, elem_nodes_tags in enumerate(mesh.elem_conn):
         node_indices = [node_tag_map[tag] for tag in elem_nodes_tags]
         nodes = mesh.node_coords[np.array(node_indices)]
-        polygon = Polygon(nodes[:, :2], edgecolor="b", facecolor="none", lw=0.5)
+        
+        elem_type_id = mesh.elem_type_ids[i]
+        color = colors[elem_type_id] if num_types > 1 else colors[0]
+
+        polygon = Polygon(nodes[:, :2], edgecolor=color, facecolor="none", lw=0.5)
         ax.add_patch(polygon)
         if text_flag:
             ax.text(
                 mesh.cell_centroids[i, 0],
                 mesh.cell_centroids[i, 1],
                 f"{i} (A={mesh.cell_volumes[i]:.2f})",
-                color="blue",
+                color="black",
                 fontsize=8,
                 ha="center",
             )
@@ -508,10 +518,10 @@ if __name__ == "__main__":
         print(f"First 5 node coordinates:\n{mesh_data['node_coords'][:5]}")
         print(f"First 5 element connectivities:\n{mesh_data['elem_conn'][:5]}")
 
+        if mesh.dim == 2:
+            plot_mesh(mesh)
+
     except FileNotFoundError:
         print(f"Error: Mesh file not found at {mesh_file}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
-    if mesh.dim == 2:
-        plot_mesh(mesh)
