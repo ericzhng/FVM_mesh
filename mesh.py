@@ -1,23 +1,21 @@
 import gmsh
 import numpy as np
-
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
+from typing import Dict, List, Any, Tuple
 
 
 class Mesh:
     """
-    A class to represent a computational mesh for 1D, 2D, or 3D simulations,
+    Represents a computational mesh for 1D, 2D, or 3D simulations,
     providing geometric and connectivity information for Finite Volume Methods.
     """
 
-    def __init__(self):
-        """
-        Initializes the Mesh object with empty attributes.
-        """
-        self.dim = 0
-        self.nelem = 0
-        self.nnode = 0
+    def __init__(self) -> None:
+        """Initializes the Mesh object with empty attributes."""
+        self.dim: int = 0
+        self.nelem: int = 0
+        self.nnode: int = 0
 
         # raw data
         self.node_tags = np.array([])
