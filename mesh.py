@@ -57,7 +57,7 @@ class Mesh:
         self.nnode = len(self.node_tags)
 
         # Renumber node tags using the specified algorithm
-        self.renumber_nodes(algorithm="sequential")
+        self.renumber_nodes(algorithm="partition")
 
         elem_types, elem_tags_list, node_connectivity_list = (
             gmsh.model.mesh.getElements()
@@ -108,10 +108,6 @@ class Mesh:
 
         # Patch: update boundary_faces_nodes after reading mesh
         self._get_boundary_info()
-        if self.boundary_faces_nodes.size > 0:
-            self.boundary_faces_nodes = np.vectorize(self.node_renumber_map.get)(
-                self.boundary_faces_nodes
-            )
 
         gmsh.finalize()
 
@@ -148,11 +144,40 @@ class Mesh:
             old_to_new = {self.node_tags[i]: j for j, i in enumerate(sort_idx)}
             new_order = sort_idx
         elif algorithm == "partition":
-            raise NotImplementedError(
-                "Partition-based renumbering is not implemented yet. "
-                "You may use libraries like METIS or Scotch for graph partitioning, "
-                "then reorder nodes according to partition assignment."
-            )
+            # Partition-aware renumbering using METIS
+            try:
+                import metis
+            except ImportError:
+                raise ImportError(
+                    "The 'metis' Python package is required for partition-based renumbering. Install with 'pip install metis'."
+                )
+
+            # Build adjacency graph for nodes: nodes are connected if they share an element
+            from collections import defaultdict
+
+            node_adj = defaultdict(set)
+            for conn in self.elem_conn:
+                for i in range(len(conn)):
+                    for j in range(i + 1, len(conn)):
+                        node_adj[conn[i]].add(conn[j])
+                        node_adj[conn[j]].add(conn[i])
+
+            # METIS expects adjacency as a list of lists
+            adjacency = [sorted(list(node_adj[i])) for i in range(self.nnode)]
+
+            # Partition the graph (default: 2 partitions, can be parameterized)
+            n_parts = 2
+            (edgecuts, parts) = metis.part_graph(adjacency, nparts=n_parts)
+
+            # Sort nodes by partition, then by original index within partition
+            partitioned_nodes = [[] for _ in range(n_parts)]
+            for idx, part in enumerate(parts):
+                partitioned_nodes[part].append(idx)
+            new_order = np.concatenate([np.array(nodes) for nodes in partitioned_nodes])
+
+            # Build old_to_new mapping
+            old_to_new = {self.node_tags[i]: j for j, i in enumerate(new_order)}
+
         else:
             raise NotImplementedError(
                 f"Renumbering algorithm '{algorithm}' is not implemented."
@@ -211,6 +236,10 @@ class Mesh:
         if all_boundary_faces_nodes:
             self.boundary_faces_nodes = np.vstack(all_boundary_faces_nodes)
             self.boundary_faces_tags = np.array(all_boundary_faces_tags)
+        if self.boundary_faces_nodes.size > 0:
+            self.boundary_faces_nodes = np.vectorize(self.node_renumber_map.get)(
+                self.boundary_faces_nodes
+            )
 
     def _compute_cell_centroids(self):
         """Computes the centroid of each element."""
