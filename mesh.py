@@ -145,7 +145,7 @@ class Mesh:
             adjacency = [sorted(list(node_adj[i])) for i in range(self.nnode)]
 
             # Partition the graph (default: 2 partitions, can be parameterized)
-            n_parts = 2
+            n_parts = 5
             (edgecuts, parts) = metis.part_graph(adjacency, nparts=n_parts)
 
             # Sort nodes by partition, then by original index within partition
@@ -493,7 +493,8 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
             ax.text(
                 mesh.cell_centroids[i, 0],
                 mesh.cell_centroids[i, 1],
-                f"{i}\n(A={mesh.cell_volumes[i]:.2f})",
+                f"{i}",
+                # f"{i}\n(A={mesh.cell_volumes[i]:.2f})",
                 color="black",
                 fontsize=8,
                 ha="center",
@@ -503,6 +504,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         for i, coord in enumerate(mesh.node_coords):
             ax.text(coord[0], coord[1], str(i), color="red", fontsize=8, ha="center")
 
+    if show_labels and False:
         for i in range(mesh.nelem):
             for j, _ in enumerate(mesh.elem_faces[i]):
                 midpoint = mesh.face_midpoints[i, j]
@@ -527,6 +529,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
     plt.xlabel("X-coordinate")
     plt.ylabel("Y-coordinate")
     plt.grid(False)
+    plt.savefig("mesh_plot_renumber_parition.png", dpi=300, bbox_inches="tight")
     plt.show(block=True)
 
 
@@ -536,7 +539,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        mesh.renumber_nodes(algorithm="spatial_x")
+        mesh.renumber_nodes(algorithm="partition")
         mesh.analyze_mesh()
         mesh.summary()
 
