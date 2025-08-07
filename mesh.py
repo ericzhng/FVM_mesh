@@ -463,7 +463,9 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         elem_type_id = mesh.elem_type_ids[i]
         color = colors[elem_type_id] if num_types > 1 else colors[0]
 
-        polygon = Polygon(nodes[:, :2], edgecolor="black", facecolor="none", lw=1.5)
+        polygon = Polygon(
+            nodes[:, :2], edgecolor="black", facecolor=color, alpha=0.5, lw=1.5
+        )
         ax.add_patch(polygon)
 
         if show_labels:
@@ -504,7 +506,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
     plt.xlabel("X-coordinate")
     plt.ylabel("Y-coordinate")
     plt.grid(False)
-    plt.show()
+    plt.show(block=True)
 
 
 if __name__ == "__main__":
@@ -513,7 +515,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        mesh.renumber_nodes(algorithm="spatial_x")
+        # mesh.renumber_nodes(algorithm="spatial_x")
         mesh.analyze_mesh()
         mesh.summary()
 
