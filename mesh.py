@@ -1,8 +1,11 @@
+import os
 import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from typing import Dict, List, Any, Tuple
+
+os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 
 
 class Mesh:
