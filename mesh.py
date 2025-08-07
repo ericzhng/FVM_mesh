@@ -464,7 +464,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         color = colors[elem_type_id] if num_types > 1 else colors[0]
 
         polygon = Polygon(
-            nodes[:, :2], edgecolor="black", facecolor=color, alpha=0.5, lw=1.5
+            nodes[:, :2], edgecolor=color, facecolor="none", alpha=0.5, lw=1.5
         )
         ax.add_patch(polygon)
 
