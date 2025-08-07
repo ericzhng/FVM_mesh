@@ -17,130 +17,108 @@ class Mesh:
         self.nelem: int = 0
         self.nnode: int = 0
 
-        # raw data
-        self.node_tags = np.array([])
-        self.elem_tags = np.array([])
-        self.node_coords = np.array([])
-        self.elem_conn = []  # Use a list to support mixed element types
-        self.elem_types = {}
-        self.elem_type_ids = np.array([])  # Stores the type ID for each element
+        # Raw data
+        self.node_tags: np.ndarray = np.array([])
+        self.node_coords: np.ndarray = np.array([])
+        self.elem_tags: np.ndarray = np.array([])
+        self.elem_conn: List[List[int]] = []
+        self.elem_types: Dict[int, Dict[str, Any]] = {}
+        self.elem_type_ids: np.ndarray = np.array([])
 
-        # derived - boundary
-        self.boundary_faces_nodes = np.array([])
-        self.boundary_faces_tags = np.array([])
-        self.boundary_tag_map = {}
+        # Boundary information
+        self.boundary_faces_nodes: np.ndarray = np.array([])
+        self.boundary_faces_tags: np.ndarray = np.array([])
+        self.boundary_tag_map: Dict[str, int] = {}
 
-        # derived - variables used in FVM
-        self.cell_volumes = np.array([])
-        self.cell_centroids = np.array([])
-        self.face_normals = np.array([])
-        self.face_tangentials = np.array([])
-        self.face_areas = np.array([])
-        self.cell_neighbors = np.array([])
-        self.elem_faces = []
+        # FVM-related derived data
+        self.cell_volumes: np.ndarray = np.array([])
+        self.cell_centroids: np.ndarray = np.array([])
+        self.face_normals: np.ndarray = np.array([])
+        self.face_tangentials: np.ndarray = np.array([])
+        self.face_areas: np.ndarray = np.array([])
+        self.cell_neighbors: np.ndarray = np.array([])
+        self.elem_faces: List[List[List[int]]] = []
+        self.face_midpoints: np.ndarray = np.array([])
+        self.face_to_cell_distances: np.ndarray = np.array([])
+        self.node_renumber_map: Dict[int, int] = {}
 
-    def read_mesh(self, mesh_file):
+    def read_mesh(self, mesh_file: str) -> None:
         """
-        Reads the mesh file using gmsh, determines the highest dimension,
-        and extracts node and element information for all element types of that dimension.
-
-        Args:
-            mesh_file (str): Path to the mesh file (e.g., .msh).
+        Reads a mesh file using Gmsh and extracts node and element information.
         """
         gmsh.initialize()
-        gmsh.open(mesh_file)
+        try:
+            gmsh.open(mesh_file)
 
-        self.node_tags, self.node_coords, _ = gmsh.model.mesh.getNodes()
-        self.node_coords = np.array(self.node_coords).reshape(-1, 3)
-        self.nnode = len(self.node_tags)
+            raw_node_tags, rww_node_coords, _ = gmsh.model.mesh.getNodes()
+            self.node_coords = np.array(rww_node_coords).reshape(-1, 3)
+            self.nnode = len(raw_node_tags)
+            self.node_tags = np.arange(self.nnode)
 
-        # Renumber node tags using the specified algorithm
-        self.renumber_nodes(algorithm="partition")
+            # Create a map from raw gmsh tags to 0-based indices
+            self.node_renumber_map = {tag: i for i, tag in enumerate(raw_node_tags)}
 
-        elem_types, elem_tags_list, node_connectivity_list = (
-            gmsh.model.mesh.getElements()
-        )
-        max_dim = 0
-        for e_type in elem_types:
-            _, dim, _, _, _, _ = gmsh.model.mesh.getElementProperties(e_type)
-            if dim > max_dim:
-                max_dim = dim
-        self.dim = max_dim
+            elem_types, elem_tags_list, connectivity_list = (
+                gmsh.model.mesh.getElements()
+            )
 
-        all_elem_tags = []
-        all_elem_conn = []
-        all_elem_type_ids = []
-        elem_type_counter = 0
+            self.dim = max(
+                gmsh.model.mesh.getElementProperties(e_type)[1] for e_type in elem_types
+            )
 
-        for i, e_type in enumerate(elem_types):
-            props = gmsh.model.mesh.getElementProperties(e_type)
-            dim = props[1]
-            if dim == self.dim:
-                num_nodes = props[3]
-                name, _, _, _, _, _ = gmsh.model.mesh.getElementProperties(e_type)
-                self.elem_types[elem_type_counter] = {
-                    "name": name,
-                    "num_nodes": num_nodes,
-                }
+            all_elem_tags = []
+            all_elem_conn = []
+            all_elem_type_ids = []
+            elem_type_counter = 0
 
-                tags = elem_tags_list[i]
-                conn = np.array(node_connectivity_list[i]).reshape(-1, num_nodes)
+            for i, e_type in enumerate(elem_types):
+                props = gmsh.model.mesh.getElementProperties(e_type)
+                if props[1] == self.dim:
+                    num_nodes = props[3]
+                    self.elem_types[elem_type_counter] = {
+                        "name": props[0],
+                        "num_nodes": num_nodes,
+                    }
 
-                # Remap node tags in connectivity to new indices
-                conn = np.vectorize(self.node_renumber_map.get)(conn)
+                    tags = elem_tags_list[i]
+                    conn = np.array(connectivity_list[i]).reshape(-1, num_nodes)
+                    # Remap connectivity from raw tags to 0-based indices
+                    conn = np.vectorize(self.node_renumber_map.get)(conn)
 
-                all_elem_tags.append(tags)
-                all_elem_conn.extend(conn.tolist())
-                all_elem_type_ids.extend([elem_type_counter] * len(tags))
-                elem_type_counter += 1
+                    all_elem_tags.append(tags)
+                    all_elem_conn.extend(conn.tolist())
+                    all_elem_type_ids.extend([elem_type_counter] * len(tags))
+                    elem_type_counter += 1
 
-        if all_elem_tags:
-            self.elem_tags = np.concatenate(all_elem_tags)
-            self.elem_conn = all_elem_conn
-            self.elem_type_ids = np.array(all_elem_type_ids)
-            self.nelem = len(self.elem_tags)
-        else:
-            self.elem_tags = np.array([])
-            self.elem_conn = []
-            self.nelem = 0
+            if all_elem_tags:
+                self.elem_tags = np.concatenate(all_elem_tags)
+                self.elem_conn = all_elem_conn
+                self.elem_type_ids = np.array(all_elem_type_ids)
+                self.nelem = len(self.elem_tags)
 
-        # Patch: update boundary_faces_nodes after reading mesh
-        self._get_boundary_info()
+            self._get_boundary_info()
 
-        gmsh.finalize()
+        finally:
+            gmsh.finalize()
 
-    def renumber_nodes(self, algorithm="sequential"):
+    def renumber_nodes(self, algorithm: str = "sequential") -> None:
         """
-        Renumber node tags according to the specified algorithm.
-        Supported algorithms:
-            - 'sequential': 0, 1, 2, ...
-            - 'reverse': n-1, n-2, ..., 0
-            - 'random': random permutation
-            - 'spatial_x': sort by x-coordinate
-            - 'spatial_y': sort by y-coordinate
-            - 'spatial_z': sort by z-coordinate
-            - 'partition': partition-aware renumbering for parallel/mpi (future)
-        Updates self.node_tags and provides mapping old_to_new as self.node_renumber_map.
+        Renumbers nodes according to the specified algorithm, updating node coordinates,
+        element connectivity, and boundary information accordingly.
         """
+        if self.nnode == 0:
+            return
+
         if algorithm == "sequential":
-            old_to_new = {tag: i for i, tag in enumerate(self.node_tags)}
             new_order = np.arange(self.nnode)
         elif algorithm == "reverse":
-            old_to_new = {
-                tag: self.nnode - 1 - i for i, tag in enumerate(self.node_tags)
-            }
             new_order = np.arange(self.nnode - 1, -1, -1)
         elif algorithm == "random":
-            rng = np.random.default_rng()
-            perm = rng.permutation(self.nnode)
-            old_to_new = {tag: perm[i] for i, tag in enumerate(self.node_tags)}
-            new_order = perm
+            new_order = np.random.permutation(self.nnode)
         elif algorithm in ("spatial_x", "spatial_y", "spatial_z"):
             axis = {"spatial_x": 0, "spatial_y": 1, "spatial_z": 2}[algorithm]
-            node_coords_arr = np.array(self.node_coords)
-            sort_idx = np.argsort(node_coords_arr[:, axis])
-            old_to_new = {self.node_tags[i]: j for j, i in enumerate(sort_idx)}
-            new_order = sort_idx
+            new_order = np.argsort(self.node_coords[:, axis])
+
         elif algorithm == "partition":
             # Partition-aware renumbering using METIS
             try:
@@ -173,38 +151,40 @@ class Mesh:
                 partitioned_nodes[part].append(idx)
             new_order = np.concatenate([np.array(nodes) for nodes in partitioned_nodes])
 
-            # Build old_to_new mapping
-            old_to_new = {self.node_tags[i]: j for j, i in enumerate(new_order)}
-
         else:
             raise NotImplementedError(
                 f"Renumbering algorithm '{algorithm}' is not implemented."
             )
-        self.node_renumber_map = old_to_new
-        # Update node_tags and node_coords to new order
-        self.node_tags = np.arange(self.nnode, dtype=type(self.node_tags))
+
+        # Reorder node coordinates
         self.node_coords = self.node_coords[new_order]
 
-    def analyze_mesh(self):
-        """
-        Analyzes the mesh to compute all geometric and connectivity properties
-        required for a Finite Volume Method solver.
-        """
-        if len(self.node_tags) == 0:
-            raise RuntimeError("Mesh data has not been read. Call read_mesh() first.")
+        # Create a map from old indices to new indices
+        remap_indices = np.empty_like(new_order)
+        remap_indices[new_order] = np.arange(self.nnode)
 
-        max_tag = np.max(self.node_tags)
-        self.node_tag_map = np.full(max_tag + 1, -1, dtype=np.int32)
-        self.node_tag_map[self.node_tags] = np.arange(self.nnode, dtype=np.int32)
+        # Update element and boundary connectivity
+        self.elem_conn = [list(remap_indices[conn]) for conn in self.elem_conn]
+        if self.boundary_faces_nodes.size > 0:
+            self.boundary_faces_nodes = remap_indices[self.boundary_faces_nodes]
+
+    def analyze_mesh(self) -> None:
+        """
+        Computes geometric and connectivity properties for the mesh.
+        """
+        if self.nelem == 0:
+            raise RuntimeError("Mesh is empty. Call read_mesh() first.")
 
         self._compute_cell_centroids()
-        self._compute_mesh_properties()
+        self._extract_faces()
+        self._find_cell_neighbors()
+        self._compute_face_properties()
         self._compute_cell_volumes()
+        self._orient_face_normals()
+        self._compute_face_to_cell_distances()
 
-    def _get_boundary_info(self):
-        """
-        Extracts boundary faces and their corresponding physical group tags.
-        """
+    def _get_boundary_info(self) -> None:
+        """Extracts boundary faces and their physical group tags from Gmsh."""
         boundary_dim = self.dim - 1
         if boundary_dim < 0:
             return
@@ -218,71 +198,31 @@ class Mesh:
             self.boundary_tag_map[name] = tag
             entities = gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
             for entity in entities:
-                b_elem_types, b_elem_tags, b_node_tags = gmsh.model.mesh.getElements(
-                    dim, entity
-                )
-                for i, elem_type in enumerate(b_elem_types):
-                    _, _, _, num_nodes, _, _ = gmsh.model.mesh.getElementProperties(
-                        elem_type
-                    )
-
-                    faces_nodes = np.array(b_node_tags[i]).reshape(-1, num_nodes)
-                    faces_nodes.sort(axis=1)
+                _, _, b_node_tags = gmsh.model.mesh.getElements(dim, entity)
+                if b_node_tags:
+                    num_nodes = gmsh.model.mesh.getElementProperties(
+                        gmsh.model.mesh.getElements(dim, entity)[0][0]
+                    )[3]
+                    faces_nodes = np.array(b_node_tags[0]).reshape(-1, num_nodes)
                     all_boundary_faces_nodes.append(faces_nodes)
                     all_boundary_faces_tags.extend([tag] * len(faces_nodes))
 
         if all_boundary_faces_nodes:
             self.boundary_faces_nodes = np.vstack(all_boundary_faces_nodes)
             self.boundary_faces_tags = np.array(all_boundary_faces_tags)
-        if self.boundary_faces_nodes.size > 0:
             self.boundary_faces_nodes = np.vectorize(self.node_renumber_map.get)(
                 self.boundary_faces_nodes
             )
 
-    def _compute_cell_centroids(self):
-        """Computes the centroid of each element."""
-        centroids = np.zeros((self.nelem, 3))
+    def _compute_cell_centroids(self) -> None:
+        """Computes the centroid of each element using vectorized operations."""
+        self.cell_centroids = np.zeros((self.nelem, 3))
         for i, conn in enumerate(self.elem_conn):
-            node_indices = self.node_tag_map[conn]
-            elem_nodes_coords = self.node_coords[node_indices]
-            centroids[i] = np.mean(elem_nodes_coords, axis=0)
-        self.cell_centroids = centroids
+            self.cell_centroids[i] = np.mean(self.node_coords[conn], axis=0)
 
-    def _compute_cell_volumes(self):
-        """Computes the volume/area of each element."""
-        volumes = np.zeros(self.nelem)
-        if self.dim == 1:
-            for i, conn in enumerate(self.elem_conn):
-                node_indices = self.node_tag_map[conn]
-                elem_nodes_coords = self.node_coords[node_indices]
-                volumes[i] = np.linalg.norm(
-                    elem_nodes_coords[1, :] - elem_nodes_coords[0, :]
-                )
-        elif self.dim == 2:
-            for i, conn in enumerate(self.elem_conn):
-                node_indices = self.node_tag_map[conn]
-                elem_nodes_coords = self.node_coords[node_indices]
-                x = elem_nodes_coords[:, 0]
-                y = elem_nodes_coords[:, 1]
-                volumes[i] = 0.5 * np.abs(
-                    np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y)
-                )
-        elif self.dim == 3:
-            for i in range(self.nelem):
-                volume = 0.0
-                for j, face_nodes in enumerate(self.elem_faces[i]):
-                    face_midpoint = self.face_midpoints[i, j]
-                    face_normal = self.face_normals[i, j]
-                    face_area = self.face_areas[i, j]
-                    volume += np.dot(face_midpoint, face_normal) * face_area
-                volumes[i] = volume / 3.0
-        self.cell_volumes = volumes
-
-    def _compute_mesh_properties(self):
-        """
-        Computes cell neighbors and face properties (normals, tangentials, areas).
-        """
-        face_definitions_3d = {
+    def _extract_faces(self) -> None:
+        """Extracts faces for each element based on its dimension."""
+        face_definitions = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 3, 0]],  # Tetrahedron
             8: [
                 [0, 1, 2, 3],
@@ -301,59 +241,56 @@ class Mesh:
             ],  # Wedge
         }
 
-        self.elem_faces = []
-        faces_per_elem_list = []
-        max_faces = 0
-
         for conn in self.elem_conn:
             num_nodes = len(conn)
-            face_nodes_def = []
             if self.dim == 2:
                 face_nodes_def = [[i, (i + 1) % num_nodes] for i in range(num_nodes)]
             elif self.dim == 3:
-                if num_nodes in face_definitions_3d:
-                    face_nodes_def = face_definitions_3d[num_nodes]
-                else:
+                if num_nodes not in face_definitions:
                     raise NotImplementedError(
-                        f"3D elements with {num_nodes} nodes are not supported."
+                        f"3D elements with {num_nodes} nodes are not supported yet."
                     )
+                face_nodes_def = face_definitions[num_nodes]
+            else:
+                face_nodes_def = []
 
-            faces_per_elem_list.append(len(face_nodes_def))
+            self.elem_faces.append(
+                [[conn[i] for i in face_def] for face_def in face_nodes_def]
+            )
 
-            elem_face_nodes = []
-            for face_def in face_nodes_def:
-                elem_face_nodes.append([conn[i] for i in face_def])
-            self.elem_faces.append(elem_face_nodes)
-
-        if faces_per_elem_list:
-            max_faces = max(faces_per_elem_list)
-
+    def _find_cell_neighbors(self) -> None:
+        """Identifies neighboring cells for each face of each element."""
+        max_faces = (
+            max(len(faces) for faces in self.elem_faces) if self.elem_faces else 0
+        )
         self.cell_neighbors = -np.ones((self.nelem, max_faces), dtype=int)
-        self.face_normals = np.zeros((self.nelem, max_faces, 3))
-        self.face_tangentials = np.zeros((self.nelem, max_faces, 3))
-        self.face_areas = np.zeros((self.nelem, max_faces))
-        self.face_midpoints = np.zeros((self.nelem, max_faces, 3))
-        self.face_to_cell_distances = np.zeros((self.nelem, max_faces, 2))
+        face_to_elems: Dict[Tuple[int, ...], List[int]] = {}
 
-        if max_faces == 0:
-            return
+        for i, faces in enumerate(self.elem_faces):
+            for face_nodes in faces:
+                sorted_face = tuple(sorted(face_nodes))
+                if sorted_face not in face_to_elems:
+                    face_to_elems[sorted_face] = []
+                face_to_elems[sorted_face].append(i)
 
-        face_to_elems = {}
-        for i in range(self.nelem):
-            for j, face_nodes in enumerate(self.elem_faces[i]):
-                sorted_face_nodes = tuple(np.sort(face_nodes))
-                face_to_elems.setdefault(sorted_face_nodes, []).append(i)
-
-        for i in range(self.nelem):
-            for j, face_nodes in enumerate(self.elem_faces[i]):
-                elems = face_to_elems[tuple(np.sort(face_nodes))]
+        for i, faces in enumerate(self.elem_faces):
+            for j, face_nodes in enumerate(faces):
+                sorted_face = tuple(sorted(face_nodes))
+                elems = face_to_elems[sorted_face]
                 if len(elems) > 1:
                     self.cell_neighbors[i, j] = elems[0] if elems[1] == i else elems[1]
 
-        for i in range(self.nelem):
-            for j, face_nodes in enumerate(self.elem_faces[i]):
-                node_indices = self.node_tag_map[face_nodes]
-                nodes = self.node_coords[node_indices]
+    def _compute_face_properties(self) -> None:
+        """Computes area, normal, and tangential vectors for each face."""
+        max_faces = self.cell_neighbors.shape[1]
+        self.face_areas = np.zeros((self.nelem, max_faces))
+        self.face_normals = np.zeros((self.nelem, max_faces, 3))
+        self.face_tangentials = np.zeros((self.nelem, max_faces, 3))
+        self.face_midpoints = np.zeros((self.nelem, max_faces, 3))
+
+        for i, faces in enumerate(self.elem_faces):
+            for j, face_nodes in enumerate(faces):
+                nodes = self.node_coords[face_nodes]
                 self.face_midpoints[i, j] = np.mean(nodes, axis=0)
 
                 if self.dim == 2:
@@ -362,99 +299,100 @@ class Mesh:
                     length = np.linalg.norm(delta)
                     self.face_areas[i, j] = length
                     if length > 1e-9:
-                        self.face_normals[i, j, 0] = delta[1] / length
-                        self.face_normals[i, j, 1] = -delta[0] / length
-                        self.face_tangentials[i, j, 0] = delta[0] / length
-                        self.face_tangentials[i, j, 1] = delta[1] / length
-                elif self.dim == 3:
-                    if len(nodes) >= 3:
-                        if len(nodes) == 3:  # Tri
-                            v1 = nodes[1] - nodes[0]
-                            v2 = nodes[2] - nodes[0]
-                            normal = np.cross(v1, v2)
-                        elif len(nodes) == 4:  # Quad
-                            v1 = nodes[2] - nodes[0]
-                            v2 = nodes[3] - nodes[1]
-                            normal = np.cross(v1, v2)
-                        else:
-                            raise NotImplementedError(
-                                f"Face with {len(nodes)} nodes not supported."
-                            )
+                        self.face_normals[i, j] = (
+                            np.array([delta[1], -delta[0], 0]) / length
+                        )
+                        self.face_tangentials[i, j] = delta / length
+                elif self.dim == 3 and len(nodes) >= 3:
+                    v1 = nodes[1] - nodes[0]
+                    v2 = nodes[2] - nodes[0]
+                    normal = np.cross(v1, v2)
+                    # area for non-triangular faces is not computed accurately
+                    #   only for triangular faces
+                    area = np.linalg.norm(normal) / 2.0
+                    self.face_areas[i, j] = area
+                    if area > 1e-9:
+                        self.face_normals[i, j] = normal / np.linalg.norm(normal)
+                        self.face_tangentials[i, j] = v1 / np.linalg.norm(v1)
 
-                        area = np.linalg.norm(normal) / 2.0
-                        self.face_areas[i, j] = area
-                        if area > 1e-9:
-                            self.face_normals[i, j] = normal / (2.0 * area)
-                            self.face_tangentials[i, j] = (
-                                nodes[1] - nodes[0]
-                            ) / np.linalg.norm(nodes[1] - nodes[0])
-
+    def _orient_face_normals(self) -> None:
+        """Ensures all face normals point outwards from the cell."""
         for i in range(self.nelem):
             for j in range(len(self.elem_faces[i])):
-                if (
-                    np.dot(
-                        self.face_normals[i, j],
-                        self.face_midpoints[i, j] - self.cell_centroids[i],
-                    )
-                    < 0
-                ):
+                vector_to_face = self.face_midpoints[i, j] - self.cell_centroids[i]
+                if np.dot(self.face_normals[i, j], vector_to_face) < 0:
                     self.face_normals[i, j] *= -1
+
+    def _compute_cell_volumes(self) -> None:
+        """Computes the volume (or area for 2D) of each element."""
+        self.cell_volumes = np.zeros(self.nelem)
+        if self.dim == 1:
+            for i, conn in enumerate(self.elem_conn):
+                p1, p2 = self.node_coords[conn]
+                self.cell_volumes[i] = np.linalg.norm(p2 - p1)
+        elif self.dim == 2:
+            for i, conn in enumerate(self.elem_conn):
+                nodes = self.node_coords[conn]
+                x, y = nodes[:, 0], nodes[:, 1]
+                self.cell_volumes[i] = 0.5 * np.abs(
+                    np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1))
+                )
+        elif self.dim == 3:
+            # Using the divergence theorem: Volume = (1/3) * sum(face_midpoint . face_normal * face_area)
+            volume_contribution = (
+                np.einsum("ijk,ijk->ij", self.face_midpoints, self.face_normals)
+                * self.face_areas
+            )
+            self.cell_volumes = np.sum(volume_contribution, axis=1) / 3.0
+
+    def _compute_face_to_cell_distances(self) -> None:
+        """Computes distances from face midpoints to cell centroids."""
+        max_faces = self.cell_neighbors.shape[1]
+        self.face_to_cell_distances = np.zeros((self.nelem, max_faces, 2))
 
         d_i = np.linalg.norm(
             self.face_midpoints - self.cell_centroids[:, np.newaxis, :], axis=2
         )
+        self.face_to_cell_distances[..., 0] = d_i
+
         valid_neighbors = self.cell_neighbors != -1
         neighbor_indices = np.maximum(self.cell_neighbors, 0)
         neighbor_centroids = self.cell_centroids[neighbor_indices]
         d_j = np.linalg.norm(self.face_midpoints - neighbor_centroids, axis=2)
-        self.face_to_cell_distances[..., 0] = d_i
         self.face_to_cell_distances[..., 1] = np.where(valid_neighbors, d_j, 0)
 
-    def get_mesh_quality(self, metric="aspect_ratio"):
+    def get_mesh_quality(self, metric: str = "aspect_ratio") -> np.ndarray:
         """
-        Computes mesh quality for each element.
+        Computes a quality metric for each element.
+        Currently supports 'aspect_ratio'.
         """
-        if self.nelem == 0:
-            return np.array([])
-        if self.dim == 1:
+        if self.nelem == 0 or self.dim == 1:
             return np.ones(self.nelem)
 
         quality = np.zeros(self.nelem)
         for i, conn in enumerate(self.elem_conn):
-            node_indices = self.node_tag_map[conn]
-            elem_nodes_coords = self.node_coords[node_indices]
-
+            nodes = self.node_coords[conn]
             if self.dim == 2:
-                rolled_nodes = np.roll(elem_nodes_coords, -1, axis=0)
-                edge_lengths = np.linalg.norm(elem_nodes_coords - rolled_nodes, axis=1)
-                min_edge = np.min(edge_lengths)
-                max_edge = np.max(edge_lengths)
-                if min_edge > 1e-9:
-                    quality[i] = max_edge / min_edge
-                else:
-                    quality[i] = float("inf")
+                edge_lengths = np.linalg.norm(
+                    np.roll(nodes, -1, axis=0) - nodes, axis=1
+                )
             elif self.dim == 3:
                 edge_lengths = []
-                for face_nodes in self.elem_faces[i]:
-                    face_node_indices = self.node_tag_map[face_nodes]
-                    face_nodes_coords = self.node_coords[face_node_indices]
-                    rolled_face_nodes = np.roll(face_nodes_coords, -1, axis=0)
-                    edge_vectors = face_nodes_coords - rolled_face_nodes
-                    edge_lengths.extend(np.linalg.norm(edge_vectors, axis=1))
+                for face in self.elem_faces[i]:
+                    face_nodes = self.node_coords[face]
+                    edge_lengths.extend(
+                        np.linalg.norm(
+                            np.roll(face_nodes, -1, axis=0) - face_nodes, axis=1
+                        )
+                    )
 
-                if edge_lengths:
-                    min_edge = np.min(edge_lengths)
-                    max_edge = np.max(edge_lengths)
-                    if min_edge > 1e-9:
-                        quality[i] = max_edge / min_edge
-                    else:
-                        quality[i] = float("inf")
+            min_edge, max_edge = np.min(edge_lengths), np.max(edge_lengths)
+            quality[i] = max_edge / min_edge if min_edge > 1e-9 else float("inf")
+
         return quality
 
-    def summary(self):
-        """
-        Prints a summary of the mesh information.
-        """
+    def summary(self) -> None:
+        """Prints a summary of the mesh information."""
         print("\n--- Mesh Summary ---")
         print(f"Mesh Dimension: {self.dim}D")
         print(f"Number of Nodes: {self.nnode}")
@@ -467,21 +405,16 @@ class Mesh:
                 print(f"  - {type_info['name']}: {count} elements")
 
             quality = self.get_mesh_quality()
-            avg_quality = np.mean(quality)
-            print(f"Average Mesh Quality (Aspect Ratio): {avg_quality:.4f}")
+            print(f"Average Mesh Quality (Aspect Ratio): {np.mean(quality):.4f}")
 
-        num_boundary_sets = len(self.boundary_tag_map)
-        print(f"Number of Boundary Face Sets: {num_boundary_sets}")
-        if num_boundary_sets > 0:
-            for name, tag in self.boundary_tag_map.items():
-                count = np.sum(self.boundary_faces_tags == tag)
-                print(f"  - Boundary '{name}' (tag {tag}): {count} faces")
-        print("--------------------\n")
+        print(f"Number of Boundary Face Sets: {len(self.boundary_tag_map)}")
+        for name, tag in self.boundary_tag_map.items():
+            count = np.sum(self.boundary_faces_tags == tag)
+            print(f"  - Boundary '{name}' (tag {tag}): {count} faces")
+        print("--------------------")
 
-    def get_mesh_data(self):
-        """
-        Returns all the computed mesh data in a dictionary.
-        """
+    def get_mesh_data(self) -> Dict[str, Any]:
+        """Returns a dictionary containing all computed mesh data."""
         return {
             "dimension": self.dim,
             "node_tags": self.node_tags,
@@ -501,73 +434,58 @@ class Mesh:
         }
 
 
-def plot_mesh(mesh: Mesh):
+def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
     """
-    Visualizes the computational mesh, including element and node labels, and face normals.
-    For mixed meshes, different element types are shown in different colors.
-
-    This function is useful for debugging and verifying the mesh structure.
+    Visualizes the 2D computational mesh.
 
     Args:
-        mesh (Mesh): The mesh object to visualize.
+        mesh: The mesh object to visualize.
+        show_labels: If True, displays element/node labels and face normals.
     """
+    if mesh.dim != 2:
+        print("Plotting is only supported for 2D meshes.")
+        return
     if mesh.nelem == 0:
-        raise ValueError("Possibly mesh has not been read. Call read_mesh() first")
+        raise ValueError("Mesh is empty. Call read_mesh() first.")
 
     fig, ax = plt.subplots(figsize=(12, 12))
 
-    text_flag = mesh.nelem <= 2000
-
-    max_tag = np.max(mesh.node_tags)
-    node_tag_map = np.full(max_tag + 1, -1, dtype=np.int32)
-    node_tag_map[mesh.node_tags] = np.arange(mesh.nnode, dtype=np.int32)
-
-    # Create a color map for different element types
+    # Use a colormap for different element types
     num_types = len(mesh.elem_types)
     if num_types > 1:
-        elem_type_colors = plt.cm.get_cmap("viridis", num_types)
-        colors = [elem_type_colors(i) for i in range(num_types)]
+        cmap = plt.colormaps.get_cmap("viridis")
+        colors = cmap(np.linspace(0, 1, num_types))
     else:
         colors = ["blue"]
 
-    for i, elem_nodes_tags in enumerate(mesh.elem_conn):
-        node_indices = [node_tag_map[tag] for tag in elem_nodes_tags]
-        nodes = mesh.node_coords[np.array(node_indices)]
-
+    for i, conn in enumerate(mesh.elem_conn):
+        nodes = mesh.node_coords[conn]
         elem_type_id = mesh.elem_type_ids[i]
         color = colors[elem_type_id] if num_types > 1 else colors[0]
 
-        polygon = Polygon(nodes[:, :2], edgecolor=color, facecolor="none", lw=0.5)
+        polygon = Polygon(nodes[:, :2], edgecolor="black", facecolor="none", lw=1.5)
         ax.add_patch(polygon)
-        if text_flag:
+
+        if show_labels:
             ax.text(
                 mesh.cell_centroids[i, 0],
                 mesh.cell_centroids[i, 1],
-                f"{i} (A={mesh.cell_volumes[i]:.2f})",
+                f"{i}\n(A={mesh.cell_volumes[i]:.2f})",
                 color="black",
                 fontsize=8,
                 ha="center",
             )
 
-    if text_flag:
+    if show_labels:
         for i, coord in enumerate(mesh.node_coords):
-            ax.text(
-                coord[0],
-                coord[1],
-                str(mesh.node_tags[i]),
-                color="red",
-                fontsize=8,
-                ha="center",
-            )
+            ax.text(coord[0], coord[1], str(i), color="red", fontsize=8, ha="center")
 
-    if text_flag:
         for i in range(mesh.nelem):
             for j, _ in enumerate(mesh.elem_faces[i]):
                 midpoint = mesh.face_midpoints[i, j]
                 normal = mesh.face_normals[i, j]
-                face_to_cell_distances = mesh.face_to_cell_distances[i, j][0]
-
-                normal_scaled = normal * face_to_cell_distances * 0.5
+                dist = mesh.face_to_cell_distances[i, j, 0]
+                normal_scaled = normal * dist * 0.5
 
                 ax.quiver(
                     midpoint[0],
@@ -586,28 +504,40 @@ def plot_mesh(mesh: Mesh):
     plt.xlabel("X-coordinate")
     plt.ylabel("Y-coordinate")
     plt.grid(False)
-    plt.show(block=True)
+    plt.show()
 
 
 if __name__ == "__main__":
     try:
+        # Note: Ensure the mesh file path is correct.
         mesh_file = "./data/river_mixed.msh"
-
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
+        mesh.renumber_nodes(algorithm="spatial_x")
         mesh.analyze_mesh()
-
         mesh.summary()
 
         mesh_data = mesh.get_mesh_data()
         print("\n--- Mesh Data Export ---")
         print(f"First 5 node coordinates:\n{mesh_data['node_coords'][:5]}")
-        print(f"First 5 element connectivities:\n{mesh_data['elem_conn'][:5]}")
+        print("\nFirst 5 element connectivities:")
+        conn_data = mesh_data["elem_conn"][:5]
+        if conn_data:
+            header = "Element | Connectivity"
+            print(header)
+            print("-" * len(header))
+            for i, conn in enumerate(conn_data):
+                print(f"{i:<7} | {[int(c) for c in conn]}")
+        else:
+            print("No connectivity data.")
 
         if mesh.dim == 2:
-            plot_mesh(mesh)
+            # Labels can be disabled for large meshes to improve performance
+            plot_mesh(mesh, show_labels=mesh.nelem < 500)
 
     except FileNotFoundError:
-        print(f"Error: Mesh file not found at {mesh_file}")
+        print(f"Error: Mesh file not found at '{mesh_file}'")
+    except ImportError as e:
+        print(f"An import error occurred: {e}")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An unexpected error occurred: {e}")
