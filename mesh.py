@@ -304,15 +304,22 @@ class Mesh:
                         )
                         self.face_tangentials[i, j] = delta / length
                 elif self.dim == 3 and len(nodes) >= 3:
-                    v1 = nodes[1] - nodes[0]
-                    v2 = nodes[2] - nodes[0]
-                    normal = np.cross(v1, v2)
-                    # area for non-triangular faces is not computed accurately
-                    #   only for triangular faces
-                    area = np.linalg.norm(normal) / 2.0
+                    # Triangulate the polygon from its centroid to compute area and normal
+                    # This is robust for any planar polygon (quads, etc.)
+                    centroid = np.mean(nodes, axis=0)
+                    area_vec = np.zeros(3)
+                    for k in range(len(nodes)):
+                        p1 = nodes[k]
+                        p2 = nodes[(k + 1) % len(nodes)]
+                        area_vec += np.cross(p1 - centroid, p2 - centroid)
+                    area_vec /= 2.0
+
+                    area = np.linalg.norm(area_vec)
                     self.face_areas[i, j] = area
                     if area > 1e-9:
-                        self.face_normals[i, j] = normal / np.linalg.norm(normal)
+                        self.face_normals[i, j] = area_vec / area
+                        # Define tangential vector based on the first edge
+                        v1 = nodes[1] - nodes[0]
                         self.face_tangentials[i, j] = v1 / np.linalg.norm(v1)
 
     def _orient_face_normals(self) -> None:
@@ -463,9 +470,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         elem_type_id = mesh.elem_type_ids[i]
         color = colors[elem_type_id] if num_types > 1 else colors[0]
 
-        polygon = Polygon(
-            nodes[:, :2], edgecolor=color, facecolor="none", alpha=0.5, lw=1.5
-        )
+        polygon = Polygon(nodes[:, :2], edgecolor=color, facecolor="none", lw=1.5)
         ax.add_patch(polygon)
 
         if show_labels:
@@ -512,10 +517,10 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
 if __name__ == "__main__":
     try:
         # Note: Ensure the mesh file path is correct.
-        mesh_file = "./data/river_mixed.msh"
+        mesh_file = "./data/river_structured.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        # mesh.renumber_nodes(algorithm="spatial_x")
+        mesh.renumber_nodes(algorithm="spatial_x")
         mesh.analyze_mesh()
         mesh.summary()
 
@@ -535,7 +540,7 @@ if __name__ == "__main__":
 
         if mesh.dim == 2:
             # Labels can be disabled for large meshes to improve performance
-            plot_mesh(mesh, show_labels=mesh.nelem < 500)
+            plot_mesh(mesh, show_labels=mesh.nelem < 200)
 
     except FileNotFoundError:
         print(f"Error: Mesh file not found at '{mesh_file}'")
