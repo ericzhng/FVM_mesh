@@ -443,7 +443,7 @@ class Mesh:
 
 def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
     """
-    Visualizes the 2D computational mesh.
+    Visualizes the 2D computational mesh, adapting the plot limits to the mesh size.
 
     Args:
         mesh: The mesh object to visualize.
@@ -456,6 +456,19 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         raise ValueError("Mesh is empty. Call read_mesh() first.")
 
     fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Determine plot limits from mesh coordinates
+    if mesh.nnode > 0:
+        x_coords = mesh.node_coords[:, 0]
+        y_coords = mesh.node_coords[:, 1]
+        x_min, x_max = np.min(x_coords), np.max(x_coords)
+        y_min, y_max = np.min(y_coords), np.max(y_coords)
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        padding_x = x_range * 0.02
+        padding_y = y_range * 0.02
+        ax.set_xlim(x_min - padding_x, x_max + padding_x)
+        ax.set_ylim(y_min - padding_y, y_max + padding_y)
 
     # Use a colormap for different element types
     num_types = len(mesh.elem_types)
@@ -517,7 +530,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
 if __name__ == "__main__":
     try:
         # Note: Ensure the mesh file path is correct.
-        mesh_file = "./data/river_structured.msh"
+        mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
         mesh.renumber_nodes(algorithm="spatial_x")
@@ -540,7 +553,7 @@ if __name__ == "__main__":
 
         if mesh.dim == 2:
             # Labels can be disabled for large meshes to improve performance
-            plot_mesh(mesh, show_labels=mesh.nelem < 200)
+            plot_mesh(mesh, show_labels=mesh.nelem < 1000)
 
     except FileNotFoundError:
         print(f"Error: Mesh file not found at '{mesh_file}'")
