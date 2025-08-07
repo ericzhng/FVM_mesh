@@ -56,6 +56,9 @@ class Mesh:
         self.node_coords = np.array(self.node_coords).reshape(-1, 3)
         self.nnode = len(self.node_tags)
 
+        # Renumber node tags using the specified algorithm
+        self.renumber_nodes(algorithm="sequential")
+
         elem_types, elem_tags_list, node_connectivity_list = (
             gmsh.model.mesh.getElements()
         )
@@ -85,6 +88,9 @@ class Mesh:
                 tags = elem_tags_list[i]
                 conn = np.array(node_connectivity_list[i]).reshape(-1, num_nodes)
 
+                # Remap node tags in connectivity to new indices
+                conn = np.vectorize(self.node_renumber_map.get)(conn)
+
                 all_elem_tags.append(tags)
                 all_elem_conn.extend(conn.tolist())
                 all_elem_type_ids.extend([elem_type_counter] * len(tags))
@@ -100,8 +106,61 @@ class Mesh:
             self.elem_conn = []
             self.nelem = 0
 
+        # Patch: update boundary_faces_nodes after reading mesh
         self._get_boundary_info()
+        if self.boundary_faces_nodes.size > 0:
+            self.boundary_faces_nodes = np.vectorize(self.node_renumber_map.get)(
+                self.boundary_faces_nodes
+            )
+
         gmsh.finalize()
+
+    def renumber_nodes(self, algorithm="sequential"):
+        """
+        Renumber node tags according to the specified algorithm.
+        Supported algorithms:
+            - 'sequential': 0, 1, 2, ...
+            - 'reverse': n-1, n-2, ..., 0
+            - 'random': random permutation
+            - 'spatial_x': sort by x-coordinate
+            - 'spatial_y': sort by y-coordinate
+            - 'spatial_z': sort by z-coordinate
+            - 'partition': partition-aware renumbering for parallel/mpi (future)
+        Updates self.node_tags and provides mapping old_to_new as self.node_renumber_map.
+        """
+        if algorithm == "sequential":
+            old_to_new = {tag: i for i, tag in enumerate(self.node_tags)}
+            new_order = np.arange(self.nnode)
+        elif algorithm == "reverse":
+            old_to_new = {
+                tag: self.nnode - 1 - i for i, tag in enumerate(self.node_tags)
+            }
+            new_order = np.arange(self.nnode - 1, -1, -1)
+        elif algorithm == "random":
+            rng = np.random.default_rng()
+            perm = rng.permutation(self.nnode)
+            old_to_new = {tag: perm[i] for i, tag in enumerate(self.node_tags)}
+            new_order = perm
+        elif algorithm in ("spatial_x", "spatial_y", "spatial_z"):
+            axis = {"spatial_x": 0, "spatial_y": 1, "spatial_z": 2}[algorithm]
+            node_coords_arr = np.array(self.node_coords)
+            sort_idx = np.argsort(node_coords_arr[:, axis])
+            old_to_new = {self.node_tags[i]: j for j, i in enumerate(sort_idx)}
+            new_order = sort_idx
+        elif algorithm == "partition":
+            raise NotImplementedError(
+                "Partition-based renumbering is not implemented yet. "
+                "You may use libraries like METIS or Scotch for graph partitioning, "
+                "then reorder nodes according to partition assignment."
+            )
+        else:
+            raise NotImplementedError(
+                f"Renumbering algorithm '{algorithm}' is not implemented."
+            )
+        self.node_renumber_map = old_to_new
+        # Update node_tags and node_coords to new order
+        self.node_tags = np.arange(self.nnode, dtype=type(self.node_tags))
+        self.node_coords = self.node_coords[new_order]
 
     def analyze_mesh(self):
         """
@@ -439,15 +498,15 @@ def plot_mesh(mesh: Mesh):
     # Create a color map for different element types
     num_types = len(mesh.elem_types)
     if num_types > 1:
-        elem_type_colors = plt.cm.get_cmap('viridis', num_types)
+        elem_type_colors = plt.cm.get_cmap("viridis", num_types)
         colors = [elem_type_colors(i) for i in range(num_types)]
     else:
-        colors = ['blue']
+        colors = ["blue"]
 
     for i, elem_nodes_tags in enumerate(mesh.elem_conn):
         node_indices = [node_tag_map[tag] for tag in elem_nodes_tags]
         nodes = mesh.node_coords[np.array(node_indices)]
-        
+
         elem_type_id = mesh.elem_type_ids[i]
         color = colors[elem_type_id] if num_types > 1 else colors[0]
 
