@@ -44,6 +44,7 @@ class Mesh:
         self.face_midpoints: np.ndarray = np.array([])
         self.face_to_cell_distances: np.ndarray = np.array([])
         self.node_renumber_map: Dict[int, int] = {}
+        self.node_partitions: np.ndarray = np.array([])
 
     def read_mesh(self, mesh_file: str) -> None:
         """
@@ -104,26 +105,32 @@ class Mesh:
         finally:
             gmsh.finalize()
 
-    def renumber_nodes(self, algorithm: str = "sequential") -> None:
+    def renumber_nodes(self, algorithm: str = "sequential", n_parts: int = 2) -> None:
         """
         Renumbers nodes according to the specified algorithm, updating node coordinates,
         element connectivity, and boundary information accordingly.
+        For 'partition' algorithm, it partitions elements (cells) and then renumbers nodes.
         """
         if self.nnode == 0:
             return
 
         if algorithm == "sequential":
             new_order = np.arange(self.nnode)
+            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm == "reverse":
             new_order = np.arange(self.nnode - 1, -1, -1)
+            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm == "random":
             new_order = np.random.permutation(self.nnode)
+            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm in ("spatial_x", "spatial_y", "spatial_z"):
             axis = {"spatial_x": 0, "spatial_y": 1, "spatial_z": 2}[algorithm]
             new_order = np.argsort(self.node_coords[:, axis])
+            self.node_partitions = np.zeros(self.nnode, dtype=int)
 
         elif algorithm == "partition":
-            # Partition-aware renumbering using METIS
+            # Partitioning is based on the dual graph of the mesh (elements are vertices,
+            # shared faces are edges) for accurate FVM domain decomposition.
             try:
                 import metis
             except ImportError:
@@ -131,28 +138,44 @@ class Mesh:
                     "The 'metis' Python package is required for partition-based renumbering. Install with 'pip install metis'."
                 )
 
-            # Build adjacency graph for nodes: nodes are connected if they share an element
-            from collections import defaultdict
+            # Ensure cell neighbors are computed to build the cell adjacency graph
+            if not self.elem_faces:
+                self._extract_faces()
+            if self.cell_neighbors.size == 0:
+                self._find_cell_neighbors()
 
-            node_adj = defaultdict(set)
-            for conn in self.elem_conn:
-                for i in range(len(conn)):
-                    for j in range(i + 1, len(conn)):
-                        node_adj[conn[i]].add(conn[j])
-                        node_adj[conn[j]].add(conn[i])
+            # Build cell adjacency graph
+            cell_adj = [[] for _ in range(self.nelem)]
+            for i in range(self.nelem):
+                for neighbor in self.cell_neighbors[i]:
+                    if neighbor != -1:  # -1 indicates a boundary face
+                        cell_adj[i].append(neighbor)
 
-            # METIS expects adjacency as a list of lists
-            adjacency = [sorted(list(node_adj[i])) for i in range(self.nnode)]
+            # Partition the cell graph
+            (edgecuts, elem_parts) = metis.part_graph(cell_adj, nparts=n_parts)
 
-            # Partition the graph (default: 2 partitions, can be parameterized)
-            n_parts = 5
-            (edgecuts, parts) = metis.part_graph(adjacency, nparts=n_parts)
+            # Assign partition IDs to nodes. If a node is on a boundary between
+            # partitions, it is assigned to the partition with the lowest ID.
+            node_to_parts = [set() for _ in range(self.nnode)]
+            for elem_idx, conn in enumerate(self.elem_conn):
+                part_id = elem_parts[elem_idx]
+                for node_idx in conn:
+                    if node_idx < self.nnode:
+                        node_to_parts[node_idx].add(part_id)
+
+            self.node_partitions = np.zeros(self.nnode, dtype=int)
+            for i in range(self.nnode):
+                if node_to_parts[i]:
+                    self.node_partitions[i] = min(node_to_parts[i])
 
             # Sort nodes by partition, then by original index within partition
             partitioned_nodes = [[] for _ in range(n_parts)]
-            for idx, part in enumerate(parts):
-                partitioned_nodes[part].append(idx)
-            new_order = np.concatenate([np.array(nodes) for nodes in partitioned_nodes])
+            for idx, part in enumerate(self.node_partitions):
+                if part < n_parts:
+                    partitioned_nodes[part].append(idx)
+            new_order = np.concatenate(
+                [np.array(nodes) for nodes in partitioned_nodes if nodes]
+            )
 
         else:
             raise NotImplementedError(
@@ -161,6 +184,7 @@ class Mesh:
 
         # Reorder node coordinates
         self.node_coords = self.node_coords[new_order]
+        self.node_partitions = self.node_partitions[new_order]
 
         # Create a map from old indices to new indices
         remap_indices = np.empty_like(new_order)
@@ -444,13 +468,14 @@ class Mesh:
         }
 
 
-def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
+def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
     """
     Visualizes the 2D computational mesh, adapting the plot limits to the mesh size.
 
     Args:
         mesh: The mesh object to visualize.
         show_labels: If True, displays element/node labels and face normals.
+        n_parts: If > 1, plots the mesh partitions.
     """
     if mesh.dim != 2:
         print("Plotting is only supported for 2D meshes.")
@@ -473,56 +498,71 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True) -> None:
         ax.set_xlim(x_min - padding_x, x_max + padding_x)
         ax.set_ylim(y_min - padding_y, y_max + padding_y)
 
-    # Use a colormap for different element types
-    num_types = len(mesh.elem_types)
-    if num_types > 1:
-        cmap = plt.colormaps.get_cmap("viridis")
-        colors = cmap(np.linspace(0, 1, num_types))
-    else:
-        colors = ["blue"]
-
-    for i, conn in enumerate(mesh.elem_conn):
-        nodes = mesh.node_coords[conn]
-        elem_type_id = mesh.elem_type_ids[i]
-        color = colors[elem_type_id] if num_types > 1 else colors[0]
-
-        polygon = Polygon(nodes[:, :2], edgecolor=color, facecolor="none", lw=1.5)
-        ax.add_patch(polygon)
-
-        if show_labels:
-            ax.text(
-                mesh.cell_centroids[i, 0],
-                mesh.cell_centroids[i, 1],
-                f"{i}",
-                # f"{i}\n(A={mesh.cell_volumes[i]:.2f})",
-                color="black",
-                fontsize=8,
-                ha="center",
+    # Use a colormap for different element types or partitions
+    if n_parts > 1 and len(mesh.node_partitions) > 0:
+        cmap = plt.get_cmap("viridis", n_parts)
+        # Plot elements with partition colors
+        for i, conn in enumerate(mesh.elem_conn):
+            nodes = mesh.node_coords[conn]
+            # Determine element partition from the majority of its nodes
+            node_parts = mesh.node_partitions[conn]
+            if len(node_parts) > 0:
+                part_id = np.bincount(node_parts).argmax()
+            else:
+                part_id = 0  # Fallback for empty connectivity
+            polygon = Polygon(
+                nodes[:, :2],
+                edgecolor="black",
+                facecolor=cmap(part_id),
+                lw=1.0,
+                alpha=0.6,
             )
+            ax.add_patch(polygon)
+
+        # Plot partition boundaries clearly
+        # Use a set to store unique boundary faces to avoid redundant plotting
+        boundary_faces = set()
+        if hasattr(mesh, "elem_faces"):
+            for faces in mesh.elem_faces:
+                for face_nodes_indices in faces:
+                    if max(face_nodes_indices) < len(mesh.node_partitions):
+                        partitions = mesh.node_partitions[face_nodes_indices]
+                        if len(set(partitions)) > 1:
+                            boundary_faces.add(tuple(sorted(face_nodes_indices)))
+
+        # Plot each unique boundary face
+        for face_indices in boundary_faces:
+            nodes = mesh.node_coords[list(face_indices)]
+            ax.plot(nodes[:, 0], nodes[:, 1], color="crimson", lw=3, zorder=10)
+    else:
+        # Original plotting by element type
+        num_types = len(mesh.elem_types)
+        if num_types > 1:
+            cmap = plt.colormaps.get_cmap("viridis")
+            colors = cmap(np.linspace(0, 1, num_types))
+        else:
+            colors = ["blue"]
+
+        for i, conn in enumerate(mesh.elem_conn):
+            nodes = mesh.node_coords[conn]
+            elem_type_id = mesh.elem_type_ids[i]
+            color = colors[elem_type_id] if num_types > 1 else colors[0]
+
+            polygon = Polygon(nodes[:, :2], edgecolor=color, facecolor="none", lw=1.5)
+            ax.add_patch(polygon)
 
     if show_labels:
         for i, coord in enumerate(mesh.node_coords):
             ax.text(coord[0], coord[1], str(i), color="red", fontsize=8, ha="center")
-
-    if show_labels and False:
         for i in range(mesh.nelem):
-            for j, _ in enumerate(mesh.elem_faces[i]):
-                midpoint = mesh.face_midpoints[i, j]
-                normal = mesh.face_normals[i, j]
-                dist = mesh.face_to_cell_distances[i, j, 0]
-                normal_scaled = normal * dist * 0.5
-
-                ax.quiver(
-                    midpoint[0],
-                    midpoint[1],
-                    normal_scaled[0],
-                    normal_scaled[1],
-                    angles="xy",
-                    scale_units="xy",
-                    scale=1,
-                    color="green",
-                    width=0.003,
-                )
+            ax.text(
+                mesh.cell_centroids[i, 0],
+                mesh.cell_centroids[i, 1],
+                f"{i}",
+                color="black",
+                fontsize=8,
+                ha="center",
+            )
 
     ax.set_aspect("equal", "box")
     ax.set_title("Mesh Visualization")
@@ -539,7 +579,8 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        mesh.renumber_nodes(algorithm="partition")
+        n_parts = 4
+        mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()
 
@@ -559,7 +600,7 @@ if __name__ == "__main__":
 
         if mesh.dim == 2:
             # Labels can be disabled for large meshes to improve performance
-            plot_mesh(mesh, show_labels=mesh.nelem < 1000)
+            plot_mesh(mesh, show_labels=mesh.nelem < 1000, n_parts=n_parts)
 
     except FileNotFoundError:
         print(f"Error: Mesh file not found at '{mesh_file}'")
