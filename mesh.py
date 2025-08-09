@@ -474,41 +474,6 @@ class Mesh:
             "face_tangentials": self.face_tangentials,
         }
 
-    def get_shared_nodes(self) -> Dict[Tuple[int, int], List[int]]:
-        """
-        Identifies shared nodes between pairs of partitions.
-
-        This method should be called after partition-based renumbering.
-
-        Returns:
-            Dict[Tuple[int, int], List[int]]: A dictionary where keys are
-            sorted tuples of partition pairs (e.g., (0, 1)) and values are
-            lists of node indices shared by that pair.
-        """
-        if not hasattr(self, 'elem_parts') or self.elem_parts.size == 0:
-            raise RuntimeError("Element partitions have not been computed. Run renumber_nodes with 'partition' algorithm first.")
-
-        # 1. Create the node_to_parts mapping
-        node_to_parts = [set() for _ in range(self.nnode)]
-        for elem_idx, conn in enumerate(self.elem_conn):
-            part_id = self.elem_parts[elem_idx]
-            for node_idx in conn:
-                if node_idx < self.nnode:
-                    node_to_parts[node_idx].add(part_id)
-
-        # 2. Organize nodes by the pairs of partitions that share them
-        shared_nodes_by_pair: Dict[Tuple[int, int], List[int]] = {}
-        for node_idx, part_set in enumerate(node_to_parts):
-            if len(part_set) > 1:
-                # Generate all pairs of partitions that share this node
-                for pair in itertools.combinations(sorted(list(part_set)), 2):
-                    # The pair is already sorted because the list was sorted
-                    if pair not in shared_nodes_by_pair:
-                        shared_nodes_by_pair[pair] = []
-                    shared_nodes_by_pair[pair].append(node_idx)
-
-        return shared_nodes_by_pair
-
     def get_partition_boundary_cells(self) -> List[Tuple[int, int]]:
         """
         Identifies pairs of cells that are neighbors across a partition boundary.
@@ -521,8 +486,10 @@ class Mesh:
         """
         if self.cell_neighbors.size == 0:
             self._find_cell_neighbors()
-        if not hasattr(self, 'elem_parts') or self.elem_parts.size == 0:
-            raise RuntimeError("Element partitions have not been computed. Run renumber_nodes with 'partition' algorithm first.")
+        if not hasattr(self, "elem_parts") or self.elem_parts.size == 0:
+            raise RuntimeError(
+                "Element partitions have not been computed. Run renumber_nodes with 'partition' algorithm first."
+            )
 
         boundary_cell_pairs = []
         processed_pairs = set()
@@ -538,12 +505,13 @@ class Mesh:
                             pair = (cell_idx, neighbor_idx)
                         else:
                             pair = (neighbor_idx, cell_idx)
-                        
+
                         if pair not in processed_pairs:
                             boundary_cell_pairs.append(pair)
                             processed_pairs.add(pair)
-                            
+
         return boundary_cell_pairs
+
 
 def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
     """
@@ -592,7 +560,6 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
             )
             ax.add_patch(polygon)
 
-        
     else:
         # Original plotting by element type
         num_types = len(mesh.elem_types)
@@ -643,21 +610,33 @@ if __name__ == "__main__":
         mesh.analyze_mesh()
         mesh.summary()
 
-        # Get and print shared nodes
-        shared_nodes_by_pair = mesh.get_shared_nodes()
-        print("\n--- Shared Nodes Between Partitions ---")
-        for pair, nodes in shared_nodes_by_pair.items():
-            print(f"Partitions {pair[0]}-{pair[1]}: {len(nodes)} shared nodes")
-        print("-----------------------------------------")
+        # Get and print partition information
+        if n_parts > 1 and hasattr(mesh, "elem_parts") and mesh.elem_parts.size > 0:
+            print("\n--- Partition Information ---")
+            counts = np.bincount(mesh.elem_parts)
+            for part_id, count in enumerate(counts):
+                print(f"  Partition {part_id}: {count} elements")
+
+            min_elem = np.min(counts)
+            max_elem = np.max(counts)
+            avg_elem = np.mean(counts)
+            load_balance = max_elem / avg_elem if avg_elem > 0 else 0.0
+
+            print(f"\n  Min elements per partition: {min_elem}")
+            print(f"  Max elements per partition: {max_elem}")
+            print(f"  Avg elements per partition: {avg_elem:.2f}")
+            print(f"  Load Balance (Max/Avg): {load_balance:.4f}")
+            print("-----------------------------")
 
         # Get and print boundary cell pairs
         boundary_cells = mesh.get_partition_boundary_cells()
         print("\n--- Partition Boundary Cell Pairs ---")
-        print(f"Found {len(boundary_cells)} pairs of neighboring cells across partitions.")
+        print(
+            f"Found {len(boundary_cells)} pairs of neighboring cells across partitions."
+        )
         # for pair in boundary_cells[:5]: # Print first 5 pairs as an example
         #     print(f"  Cell {pair[0]} (Part {mesh.elem_parts[pair[0]]}) <-> Cell {pair[1]} (Part {mesh.elem_parts[pair[1]]})")
         print("-------------------------------------")
-
 
         mesh_data = mesh.get_mesh_data()
         print("\n--- Mesh Data Export ---")
