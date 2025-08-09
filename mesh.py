@@ -195,6 +195,10 @@ class Mesh:
         if self.boundary_faces_nodes.size > 0:
             self.boundary_faces_nodes = remap_indices[self.boundary_faces_nodes]
 
+        # Clear dependent data that needs to be recomputed
+        self.elem_faces.clear()
+        self.cell_neighbors = np.array([])
+
     def analyze_mesh(self) -> None:
         """
         Computes geometric and connectivity properties for the mesh.
@@ -579,7 +583,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        n_parts = 4
+        n_parts = 8
         mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()
