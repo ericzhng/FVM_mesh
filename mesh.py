@@ -499,6 +499,37 @@ class Mesh:
 
         return boundary_cell_pairs
 
+    def get_partition_boundary_info(self) -> Dict[int, Dict[int, List[int]]]:
+        """
+        Groups cells on partition boundaries for MPI communication.
+
+        Returns:
+            Dict[int, Dict[int, List[int]]]: A dictionary where each key is a
+            partition ID, and the value is another dictionary. This inner
+            dictionary maps a neighboring partition ID to a list of cell
+            indices in the key partition that border the neighbor.
+        """
+        boundary_cell_pairs = self.get_partition_boundary_cells()
+
+        partition_info: Dict[int, Dict[int, List[int]]] = {}
+        if self.elem_parts.size > 0:
+            for part_id in range(np.max(self.elem_parts) + 1):
+                partition_info[part_id] = {}
+
+        for cell_a, cell_b in boundary_cell_pairs:
+            part_a = self.elem_parts[cell_a]
+            part_b = self.elem_parts[cell_b]
+
+            if part_b not in partition_info[part_a]:
+                partition_info[part_a][part_b] = []
+            partition_info[part_a][part_b].append(cell_a)
+
+            if part_a not in partition_info[part_b]:
+                partition_info[part_b][part_a] = []
+            partition_info[part_b][part_a].append(cell_b)
+
+        return partition_info
+
 
 def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
     """
@@ -600,7 +631,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        n_parts = 4
+        n_parts = 5
         mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()
@@ -629,9 +660,23 @@ if __name__ == "__main__":
         print(
             f"Found {len(boundary_cells)} pairs of neighboring cells across partitions."
         )
-        # for pair in boundary_cells[:5]: # Print first 5 pairs as an example
-        #     print(f"  Cell {pair[0]} (Part {mesh.elem_parts[pair[0]]}) <-> Cell {pair[1]} (Part {mesh.elem_parts[pair[1]]})")
+        for pair in boundary_cells:
+            print(
+                f"  Cell {pair[0]} (Part {mesh.elem_parts[pair[0]]}) <-> Cell {pair[1]} (Part {mesh.elem_parts[pair[1]]})"
+            )
         print("-------------------------------------")
+
+        # Get and print partition boundary info
+        if n_parts > 1 and hasattr(mesh, "elem_parts") and mesh.elem_parts.size > 0:
+            partition_boundary_info = mesh.get_partition_boundary_info()
+            print("\n--- Partition Boundary Info ---")
+            for part_id, neighbors in partition_boundary_info.items():
+                print(f"  Partition {part_id}:")
+                for neighbor_part, cells in neighbors.items():
+                    print(
+                        f"    - Neighbor Partition {neighbor_part}: {len(cells)} cells, e.g. {cells[:5]}"
+                    )
+            print("-----------------------------")
 
         mesh_data = mesh.get_mesh_data()
         print("\n--- Mesh Data Export ---")
