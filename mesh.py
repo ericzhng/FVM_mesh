@@ -45,6 +45,7 @@ class Mesh:
         self.face_to_cell_distances: np.ndarray = np.array([])
         self.node_renumber_map: Dict[int, int] = {}
         self.node_partitions: np.ndarray = np.array([])
+        self.elem_parts: np.ndarray = np.array([])
 
     def read_mesh(self, mesh_file: str) -> None:
         """
@@ -153,12 +154,13 @@ class Mesh:
 
             # Partition the cell graph
             (edgecuts, elem_parts) = metis.part_graph(cell_adj, nparts=n_parts)
+            self.elem_parts = np.array(elem_parts)
 
             # Assign partition IDs to nodes. If a node is on a boundary between
             # partitions, it is assigned to the partition with the lowest ID.
             node_to_parts = [set() for _ in range(self.nnode)]
             for elem_idx, conn in enumerate(self.elem_conn):
-                part_id = elem_parts[elem_idx]
+                part_id = self.elem_parts[elem_idx]
                 for node_idx in conn:
                     if node_idx < self.nnode:
                         node_to_parts[node_idx].add(part_id)
@@ -471,6 +473,30 @@ class Mesh:
             "face_tangentials": self.face_tangentials,
         }
 
+    def get_shared_nodes(self) -> np.ndarray:
+        """
+        Identifies and returns the indices of nodes that are shared between different partitions.
+
+        This method should be called after partition-based renumbering.
+
+        Returns:
+            np.ndarray: An array of node indices that are on the boundary between partitions.
+        """
+        if not hasattr(self, 'elem_parts') or self.elem_parts.size == 0:
+            raise RuntimeError("Element partitions have not been computed. Run renumber_nodes with 'partition' algorithm first.")
+
+        node_to_parts = [set() for _ in range(self.nnode)]
+        for elem_idx, conn in enumerate(self.elem_conn):
+            part_id = self.elem_parts[elem_idx]
+            for node_idx in conn:
+                if node_idx < self.nnode:
+                    node_to_parts[node_idx].add(part_id)
+
+        shared_node_indices = [
+            i for i, parts in enumerate(node_to_parts) if len(parts) > 1
+        ]
+        return np.array(shared_node_indices)
+
 
 def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
     """
@@ -587,6 +613,12 @@ if __name__ == "__main__":
         mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()
+
+        # Get and print shared nodes
+        shared_nodes = mesh.get_shared_nodes()
+        print(f"\nFound {len(shared_nodes)} shared nodes between partitions.")
+        if len(shared_nodes) > 0:
+            print(f"Shared node indices: {shared_nodes}")
 
         mesh_data = mesh.get_mesh_data()
         print("\n--- Mesh Data Export ---")
