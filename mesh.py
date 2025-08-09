@@ -2,7 +2,7 @@ import os
 import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 from typing import Dict, List, Any, Tuple
 import itertools
 
@@ -529,7 +529,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
     if mesh.nelem == 0:
         raise ValueError("Mesh is empty. Call read_mesh() first.")
 
-    fig, ax = plt.subplots(figsize=(12, 12))
+    fig, ax = plt.subplots(figsize=(14, 12))
 
     # Determine plot limits from mesh coordinates
     if mesh.nnode > 0:
@@ -560,6 +560,14 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
                 alpha=0.6,
             )
             ax.add_patch(polygon)
+
+        # Create proxy artists for legend
+        legend_patches = []
+        for i in range(n_parts):
+            legend_patches.append(
+                Rectangle((0, 0), 1, 1, color=cmap(i), label=f"Partition {i}")
+            )
+        ax.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc="upper left")
 
     else:
         # Original plotting by element type
@@ -606,7 +614,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        n_parts = 5
+        n_parts = 4
         mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()

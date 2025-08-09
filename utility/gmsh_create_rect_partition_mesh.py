@@ -189,8 +189,8 @@ if __name__ == "__main__":
     # Define rectangle dimensions and the number of elements
     rect_length = 100.0
     rect_height = 100.0
-    num_elements_x = 12
-    num_elements_y = 12
+    num_elements_x = 8
+    num_elements_y = 8
 
     # --- Create Structured Mesh ---
     print(
