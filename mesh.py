@@ -45,7 +45,6 @@ class Mesh:
         self.face_midpoints: np.ndarray = np.array([])
         self.face_to_cell_distances: np.ndarray = np.array([])
         self.node_renumber_map: Dict[int, int] = {}
-        self.node_partitions: np.ndarray = np.array([])
         self.elem_parts: np.ndarray = np.array([])
 
     def read_mesh(self, mesh_file: str) -> None:
@@ -119,17 +118,13 @@ class Mesh:
 
         if algorithm == "sequential":
             new_order = np.arange(self.nnode)
-            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm == "reverse":
             new_order = np.arange(self.nnode - 1, -1, -1)
-            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm == "random":
             new_order = np.random.permutation(self.nnode)
-            self.node_partitions = np.zeros(self.nnode, dtype=int)
         elif algorithm in ("spatial_x", "spatial_y", "spatial_z"):
             axis = {"spatial_x": 0, "spatial_y": 1, "spatial_z": 2}[algorithm]
             new_order = np.argsort(self.node_coords[:, axis])
-            self.node_partitions = np.zeros(self.nnode, dtype=int)
 
         elif algorithm == "partition":
             # Partitioning is based on the dual graph of the mesh (elements are vertices,
@@ -167,14 +162,14 @@ class Mesh:
                     if node_idx < self.nnode:
                         node_to_parts[node_idx].add(part_id)
 
-            self.node_partitions = np.zeros(self.nnode, dtype=int)
+            node_partitions = np.zeros(self.nnode, dtype=int)
             for i in range(self.nnode):
                 if node_to_parts[i]:
-                    self.node_partitions[i] = min(node_to_parts[i])
+                    node_partitions[i] = min(node_to_parts[i])
 
             # Sort nodes by partition, then by original index within partition
             partitioned_nodes = [[] for _ in range(n_parts)]
-            for idx, part in enumerate(self.node_partitions):
+            for idx, part in enumerate(node_partitions):
                 if part < n_parts:
                     partitioned_nodes[part].append(idx)
             new_order = np.concatenate(
@@ -188,7 +183,6 @@ class Mesh:
 
         # Reorder node coordinates
         self.node_coords = self.node_coords[new_order]
-        self.node_partitions = self.node_partitions[new_order]
 
         # Create a map from old indices to new indices
         remap_indices = np.empty_like(new_order)
@@ -545,7 +539,7 @@ def plot_mesh(mesh: Mesh, show_labels: bool = True, n_parts: int = 1) -> None:
         ax.set_ylim(y_min - padding_y, y_max + padding_y)
 
     # Use a colormap for different element types or partitions
-    if n_parts > 1 and len(mesh.node_partitions) > 0:
+    if n_parts > 1 and mesh.elem_parts.size > 0:
         cmap = plt.get_cmap("viridis", n_parts)
         # Plot elements with partition colors
         for i, conn in enumerate(mesh.elem_conn):
