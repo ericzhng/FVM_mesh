@@ -53,6 +53,7 @@ class Mesh:
         Reads a mesh file using Gmsh and extracts node and element information.
         """
         gmsh.initialize()
+        gmsh.option.setNumber("General.Verbosity", 3)
         try:
             gmsh.open(mesh_file)
 
@@ -605,7 +606,7 @@ if __name__ == "__main__":
         mesh_file = "./data/river_mixed.msh"
         mesh = Mesh()
         mesh.read_mesh(mesh_file)
-        n_parts = 8
+        n_parts = 5
         mesh.renumber_nodes(algorithm="partition", n_parts=n_parts)
         mesh.analyze_mesh()
         mesh.summary()
