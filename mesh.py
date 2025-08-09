@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 from typing import Dict, List, Any, Tuple
-import itertools
 
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 
@@ -38,7 +37,6 @@ class Mesh:
         self.cell_volumes: np.ndarray = np.array([])
         self.cell_centroids: np.ndarray = np.array([])
         self.face_normals: np.ndarray = np.array([])
-        self.face_tangentials: np.ndarray = np.array([])
         self.face_areas: np.ndarray = np.array([])
         self.cell_neighbors: np.ndarray = np.array([])
         self.elem_faces: List[List[List[int]]] = []
@@ -314,7 +312,6 @@ class Mesh:
         max_faces = self.cell_neighbors.shape[1]
         self.face_areas = np.zeros((self.nelem, max_faces))
         self.face_normals = np.zeros((self.nelem, max_faces, 3))
-        self.face_tangentials = np.zeros((self.nelem, max_faces, 3))
         self.face_midpoints = np.zeros((self.nelem, max_faces, 3))
 
         for i, faces in enumerate(self.elem_faces):
@@ -331,7 +328,6 @@ class Mesh:
                         self.face_normals[i, j] = (
                             np.array([delta[1], -delta[0], 0]) / length
                         )
-                        self.face_tangentials[i, j] = delta / length
                 elif self.dim == 3 and len(nodes) >= 3:
                     # Triangulate the polygon from its centroid to compute area and normal
                     # This is robust for any planar polygon (quads, etc.)
@@ -347,9 +343,6 @@ class Mesh:
                     self.face_areas[i, j] = area
                     if area > 1e-9:
                         self.face_normals[i, j] = area_vec / area
-                        # Define tangential vector based on the first edge
-                        v1 = nodes[1] - nodes[0]
-                        self.face_tangentials[i, j] = v1 / np.linalg.norm(v1)
 
     def _orient_face_normals(self) -> None:
         """Ensures all face normals point outwards from the cell."""
@@ -466,7 +459,6 @@ class Mesh:
             "boundary_tag_map": self.boundary_tag_map,
             "face_areas": self.face_areas,
             "face_normals": self.face_normals,
-            "face_tangentials": self.face_tangentials,
         }
 
     def get_partition_boundary_cells(self) -> List[Tuple[int, int]]:
