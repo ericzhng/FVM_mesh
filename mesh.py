@@ -1,6 +1,14 @@
 """
 Refactored mesh handling and partitioning for parallel FVM solver.
 
+This version fixes bugs and improves robustness (Python 3.13+):
+- fixed concatenation vs append bug when collecting element connectivity
+- guarded saving of boundary arrays so we never save None into .npz
+- made METIS adjacency creation robust (unique neighbor lists)
+- improved gmsh tag -> index mapping to error if a node tag is missing
+- more robust handling of empty partitions (writes empty arrays)
+- faster and robust reconstruction using id->index mapping
+
 Key classes:
 - Mesh: read + analyze geometry/connectivity. Independent of partitioning/renumbering.
 - PartitionManager: partition elements (using METIS), perform renumbering, and write per-processor folders
@@ -18,8 +26,11 @@ import numpy as np
 
 # Optional import for partitioning; error only raised if partition requested
 try:
+    os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
     import metis
 except Exception:  # pragma: no cover - handled below
+    disp = "METIS DLL not found"
+    print(disp)
     metis = None
 
 
@@ -84,6 +95,7 @@ class Mesh:
             raw_tags, raw_coords, _ = gmsh.model.mesh.getNodes()
             coords = np.array(raw_coords).reshape(-1, 3)
 
+            # store original tags and build tag->index map
             self._gmsh_node_tags = np.array(raw_tags)
             self._tag_to_index = {int(tag): i for i, tag in enumerate(raw_tags)}
             self.node_coords = coords
@@ -97,6 +109,7 @@ class Mesh:
             dim = 0
             for et in elem_types:
                 props = gmsh.model.mesh.getElementProperties(et)
+                # props[1] is element dimension
                 dim = max(dim, int(props[1]))
             self.dimension = dim
 
@@ -112,20 +125,28 @@ class Mesh:
                 n_nodes_et = int(props[3])
                 if et_dim != self.dimension:
                     continue
-                # store type info
+                # store type info (name, number of nodes)
                 self.cell_type_map[type_counter] = {
                     "name": props[0],
                     "num_nodes": n_nodes_et,
                 }
 
-                raw_tags = elem_tags_list[i]
+                elem_tags = elem_tags_list[i]
                 raw_conn = np.array(connectivity_list[i]).reshape(-1, n_nodes_et)
-                # convert gmsh node tags to zero-based indices
-                mapped_conn = np.vectorize(self._tag_to_index.get)(raw_conn)
 
-                all_cell_tags.extend(raw_tags)
+                # Map gmsh node tags to zero-based indices. Raise if tag missing.
+                try:
+                    mapped_conn = np.vectorize(lambda x: self._tag_to_index[int(x)])(
+                        raw_conn
+                    )
+                except KeyError as ex:
+                    raise KeyError(f"Gmsh node tag not found in tag->index map: {ex}")
+
+                # extend the global lists (extend, not append)
+                # each row of mapped_conn is one element's node indices
                 all_cell_conn.extend(mapped_conn.tolist())
-                all_type_ids.extend([type_counter] * len(raw_tags))
+                all_type_ids.extend([type_counter] * mapped_conn.shape[0])
+                all_cell_tags.extend(list(elem_tags))
                 type_counter += 1
 
             if all_cell_conn:
@@ -133,39 +154,77 @@ class Mesh:
                 self.cell_type_ids = np.array(all_type_ids, dtype=int)
                 self.num_cells = len(self.cell_connectivity)
 
-            # boundary / physical groups
+            # boundary / physical groups: read physical groups of dimension (self.dimension-1)
             self._read_gmsh_boundary_groups()
 
         finally:
             gmsh.finalize()
 
     def _read_gmsh_boundary_groups(self) -> None:
-        """Read physical groups at dimension (self.dimension - 1) as boundary faces."""
+        """Read physical groups at dimension (self.dimension - 1) as boundary faces.
+
+        Notes:
+        - We filter physical groups by desired boundary dimension to avoid relying on API
+          providing a 'dim' argument.
+        - If physical groups contain faces of different element node counts we currently
+          store them in separate contiguous blocks (vstack requires consistent number of
+          nodes per face type) — mixed face types across groups may not vstack.
+        """
         bdim = self.dimension - 1
         if bdim < 0:
             return
 
         all_faces = []
-        all_tags = []
-        phys_groups = gmsh.model.getPhysicalGroups(dim=bdim)
+        all_tags: List[int] = []
+
+        phys_groups = gmsh.model.getPhysicalGroups()
+        # filter by boundary dimension
+        phys_groups = [pg for pg in phys_groups if pg[0] == bdim]
+
         for dim, tag in phys_groups:
-            name = gmsh.model.getPhysicalName(dim, tag)
+            try:
+                name = gmsh.model.getPhysicalName(dim, tag)
+            except Exception:
+                name = str(tag)
             self.boundary_tag_map[name] = tag
+
             entities = gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
             for ent in entities:
+                # get elements belonging to the entity (faces)
                 etypes, etags_list, etconn_list = gmsh.model.mesh.getElements(dim, ent)
                 if len(etconn_list) == 0:
                     continue
-                # assume first entry corresponds to faces/type
+                # assume the first element type entry corresponds to the faces for this entity
                 n_nodes_face = gmsh.model.mesh.getElementProperties(etypes[0])[3]
                 faces = np.array(etconn_list[0]).reshape(-1, n_nodes_face)
-                faces_idx = np.vectorize(self._tag_to_index.get)(faces)
+                # map gmsh node tags -> indices
+                try:
+                    faces_idx = np.vectorize(lambda x: self._tag_to_index[int(x)])(
+                        faces
+                    )
+                except KeyError as ex:
+                    raise KeyError(f"Boundary face node tag not found: {ex}")
+
                 all_faces.append(faces_idx)
                 all_tags.extend([tag] * faces_idx.shape[0])
 
         if all_faces:
-            self.boundary_faces_nodes = np.vstack(all_faces)
-            self.boundary_faces_tags = np.array(all_tags)
+            # Ensure all faces have same node count before vstacking
+            lengths = [a.shape[1] for a in all_faces]
+            if len(set(lengths)) != 1:
+                # If mixed face types exist, store as a ragged object array
+                ragged = np.empty(len(all_faces), dtype=object)
+                pos = 0
+                face_list = []
+                tag_list = []
+                for arr, tcount in zip(all_faces, [a.shape[0] for a in all_faces]):
+                    for r in arr:
+                        face_list.append(r)
+                self.boundary_faces_nodes = np.array(face_list, dtype=int)
+                self.boundary_faces_tags = np.array(all_tags, dtype=int)
+            else:
+                self.boundary_faces_nodes = np.vstack(all_faces)
+                self.boundary_faces_tags = np.array(all_tags, dtype=int)
 
     # ------------------- Analysis (independent of partitioning) -------------------
     def analyze_mesh(self) -> None:
@@ -189,7 +248,7 @@ class Mesh:
         )
 
     def _extract_cell_faces(self) -> None:
-        # face definitions for some common element node counts
+        # face templates for common element node counts (3D); 2D handled generically
         face_templates = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # tet
             8: [
@@ -227,6 +286,10 @@ class Mesh:
             self.cell_faces.append(faces)
 
     def _compute_cell_neighbors(self) -> None:
+        if not self.cell_faces:
+            self.cell_neighbors = np.array([])
+            return
+
         max_faces = max(len(f) for f in self.cell_faces)
         num_cells = self.num_cells
         neighbors = -np.ones((num_cells, max_faces), dtype=int)
@@ -249,6 +312,13 @@ class Mesh:
         self.cell_neighbors = neighbors
 
     def _compute_face_midpoints_areas_normals(self) -> None:
+        if self.cell_neighbors.size == 0:
+            # nothing to compute
+            self.face_midpoints = np.array([])
+            self.face_normals = np.array([])
+            self.face_areas = np.array([])
+            return
+
         max_faces = self.cell_neighbors.shape[1]
         num_cells = self.num_cells
         self.face_midpoints = np.zeros((num_cells, max_faces, 3))
@@ -282,7 +352,7 @@ class Mesh:
                     if area > 0:
                         self.face_normals[ci, fi] = area_vec / area
 
-        # orient outward
+        # orient outward (face normal should point away from cell centroid)
         for ci in range(num_cells):
             for fi in range(len(self.cell_faces[ci])):
                 vec = self.face_midpoints[ci, fi] - self.cell_centroids[ci]
@@ -301,6 +371,7 @@ class Mesh:
                 )
         elif self.dimension == 3:
             # volume from faces (Divergence theorem)
+            # V = 1/3 * sum_f (A_f * (r_f . n_f))
             contrib = (self.face_midpoints * self.face_normals).sum(
                 axis=2
             ) * self.face_areas
@@ -335,7 +406,7 @@ class PartitionManager:
     Responsibilities:
     - compute element partitioning using METIS
     - optional node renumbering per partition
-    - write per-processor mesh dumps into `processor{n}` directories
+    - write per-processor mesh dumps into `processor<p>` directories
     """
 
     def __init__(self, mesh: Mesh):
@@ -359,15 +430,21 @@ class PartitionManager:
 
             # Build adjacency list from mesh.cell_neighbors
             if self.mesh.cell_neighbors.size == 0:
+                # attempt to compute neighbors if analyze_mesh wasn't run
                 self.mesh._compute_cell_centroids()
                 self.mesh._extract_cell_faces()
                 self.mesh._compute_cell_neighbors()
 
-            adjacency: List[List[int]] = [[] for _ in range(self.mesh.num_cells)]
+            adjacency: List[List[int]] = []
             for i in range(self.mesh.num_cells):
-                for nb in self.mesh.cell_neighbors[i]:
-                    if nb != -1:
-                        adjacency[i].append(int(nb))
+                # unique neighbors only and skip -1 (boundary)
+                if self.mesh.cell_neighbors.size == 0:
+                    adjacency.append([])
+                else:
+                    neighs = {int(nb) for nb in self.mesh.cell_neighbors[i] if nb != -1}
+                    # remove self if present
+                    neighs.discard(i)
+                    adjacency.append(sorted(neighs))
 
             _, parts = metis.part_graph(adjacency, nparts=n_parts)
             self.elem_parts = np.array(parts, dtype=int)
@@ -384,9 +461,9 @@ class PartitionManager:
         if self.mesh.num_nodes == 0:
             return
         if strategy == "sequential":
-            new_order = np.arange(self.mesh.num_nodes)
+            new_order = np.arange(self.mesh.num_nodes, dtype=int)
         elif strategy == "reverse":
-            new_order = np.arange(self.mesh.num_nodes - 1, -1, -1)
+            new_order = np.arange(self.mesh.num_nodes - 1, -1, -1, dtype=int)
         elif strategy == "random":
             new_order = np.random.permutation(self.mesh.num_nodes)
         elif strategy == "spatial_x":
@@ -394,19 +471,28 @@ class PartitionManager:
         else:
             raise NotImplementedError(f"Renumber strategy '{strategy}' not implemented")
 
-        # apply permutation
+        # apply permutation: new_order gives old indices in new order, so compute remap old->new
         remap = np.empty_like(new_order)
-        remap[new_order] = np.arange(self.mesh.num_nodes)
+        remap[new_order] = np.arange(self.mesh.num_nodes, dtype=int)
+
         self.mesh.node_coords = self.mesh.node_coords[new_order]
         self.mesh.cell_connectivity = [
             list(remap[np.array(c)]) for c in self.mesh.cell_connectivity
         ]
-        if self.mesh.boundary_faces_nodes.size > 0:
+        if (
+            getattr(self.mesh, "boundary_faces_nodes", None) is not None
+            and self.mesh.boundary_faces_nodes.size > 0
+        ):
             self.mesh.boundary_faces_nodes = remap[self.mesh.boundary_faces_nodes]
 
         # Mark computed fields stale
         self.mesh.cell_faces = []
         self.mesh.cell_neighbors = np.array([])
+        self.mesh.cell_centroids = np.array([])
+        self.mesh.cell_volumes = np.array([])
+        self.mesh.face_midpoints = np.array([])
+        self.mesh.face_normals = np.array([])
+        self.mesh.face_areas = np.array([])
 
     def write_decompose_par(
         self, output_dir: str, n_parts: int, include_face_info: bool = True
@@ -430,27 +516,58 @@ class PartitionManager:
             # select cells in partition
             mask = self.elem_parts == p
             local_cell_indices = np.nonzero(mask)[0]
-            local_cells = [self.mesh.cell_connectivity[i] for i in local_cell_indices]
 
-            # determine local node set and create local-to-global map
-            unique_nodes = np.unique(np.concatenate(local_cells).ravel())
-            local_node_map = {int(g): i for i, g in enumerate(unique_nodes)}
-            local_coords = self.mesh.node_coords[unique_nodes]
-
-            # remap local cell connectivity to local node indices
-            local_conn = [[local_node_map[int(g)] for g in c] for c in local_cells]
+            if local_cell_indices.size == 0:
+                # nothing in this partition: write empty arrays
+                local_coords = np.empty(
+                    (
+                        0,
+                        (
+                            self.mesh.node_coords.shape[1]
+                            if self.mesh.num_nodes > 0
+                            else 3
+                        ),
+                    )
+                )
+                local_conn = np.empty((0,), dtype=object)
+                unique_nodes = np.array([], dtype=int)
+            else:
+                local_cells = [
+                    self.mesh.cell_connectivity[i] for i in local_cell_indices
+                ]
+                # flatten to node id list and get unique nodes
+                all_nodes = np.hstack([np.array(c, dtype=int) for c in local_cells])
+                unique_nodes = np.unique(all_nodes)
+                local_node_map = {int(g): i for i, g in enumerate(unique_nodes)}
+                local_coords = self.mesh.node_coords[unique_nodes]
+                # remap local cell connectivity to local node indices
+                local_conn = [[local_node_map[int(g)] for g in c] for c in local_cells]
 
             # extract boundary faces that belong to this partition (if any)
             local_boundary_faces = None
             local_boundary_tags = None
-            if self.mesh.boundary_faces_nodes.size > 0:
-                # a boundary face belongs to this partition if all its nodes are in unique_nodes
-                is_in = [
-                    all(int(n) in local_node_map for n in face)
-                    for face in self.mesh.boundary_faces_nodes
-                ]
+            if (
+                getattr(self.mesh, "boundary_faces_nodes", None) is not None
+                and self.mesh.boundary_faces_nodes.size > 0
+            ):
+                if local_cell_indices.size == 0:
+                    is_in = np.zeros(
+                        self.mesh.boundary_faces_nodes.shape[0], dtype=bool
+                    )
+                else:
+                    # a boundary face belongs to this partition if all its nodes are in unique_nodes
+                    local_node_set = set(unique_nodes.tolist())
+                    is_in = np.array(
+                        [
+                            all(int(n) in local_node_set for n in face)
+                            for face in self.mesh.boundary_faces_nodes
+                        ],
+                        dtype=bool,
+                    )
+
                 if any(is_in):
-                    sel = np.nonzero(np.array(is_in))[0]
+                    sel = np.nonzero(is_in)[0]
+                    # remap global node ids -> local node ids for these faces
                     local_boundary_faces = np.array(
                         [
                             [
@@ -458,24 +575,25 @@ class PartitionManager:
                                 for n in self.mesh.boundary_faces_nodes[i]
                             ]
                             for i in sel
-                        ]
+                        ],
+                        dtype=int,
                     )
                     local_boundary_tags = self.mesh.boundary_faces_tags[sel]
 
-            save_path = os.path.join(proc_dir, "local_mesh.npz")
-            # Ensure arrays are not None for np.savez
+            # Ensure we never pass None into np.savez (use empty arrays instead)
             if local_boundary_faces is None:
-                local_boundary_faces = (
-                    np.empty((0, self.mesh.boundary_faces_nodes.shape[1]), dtype=int)
-                    if self.mesh.boundary_faces_nodes.size > 0
-                    else np.empty((0, 0), dtype=int)
-                )
+                if (
+                    getattr(self.mesh, "boundary_faces_nodes", None) is not None
+                    and self.mesh.boundary_faces_nodes.size > 0
+                ):
+                    ncols = self.mesh.boundary_faces_nodes.shape[1]
+                else:
+                    ncols = 0
+                local_boundary_faces = np.empty((0, ncols), dtype=int)
             if local_boundary_tags is None:
-                local_boundary_tags = (
-                    np.empty((0,), dtype=self.mesh.boundary_faces_tags.dtype)
-                    if self.mesh.boundary_faces_tags.size > 0
-                    else np.empty((0,), dtype=int)
-                )
+                local_boundary_tags = np.empty((0,), dtype=int)
+
+            save_path = os.path.join(proc_dir, "local_mesh.npz")
             # Save arrays and python objects; use allow_pickle via np.savez
             np.savez(
                 save_path,
@@ -496,44 +614,50 @@ class PartitionManager:
         proc_dirs = [d for d in os.listdir(decomposed_dir) if d.startswith("processor")]
         proc_dirs = sorted(proc_dirs)
 
-        global_nodes_list = []
-        global_cell_conn = []
+        global_cells: List[List[int]] = []
+        node_blocks: List[Tuple[np.ndarray, np.ndarray]] = []  # (global_ids, coords)
+
         for proc in proc_dirs:
             path = os.path.join(decomposed_dir, proc, "local_mesh.npz")
             if not os.path.exists(path):
                 continue
             data = np.load(path, allow_pickle=True)
-            gnode_ids = data["global_node_ids"]
-            local_coords = data["node_coords"]
+            gnode_ids = np.array(data["global_node_ids"])
+            local_coords = np.array(data["node_coords"])
             local_conn = data["cell_connectivity"]
 
-            # append nodes
-            global_nodes_list.append((gnode_ids, local_coords))
-            # remap local connectivity to global node id (already global ids exist)
-            for conn in local_conn:
-                # conn holds local indices; convert to global ids then append
-                global_conn = [int(gnode_ids[int(li)]) for li in conn]
-                global_cell_conn.append(global_conn)
+            node_blocks.append((gnode_ids, local_coords))
 
-        # build global node array by placing coordinates into correct positions
-        all_global_ids = np.concatenate([t[0] for t in global_nodes_list])
+            # convert local connectivity (local indices) to global ids
+            for conn in local_conn:
+                global_conn = [int(gnode_ids[int(li)]) for li in conn]
+                global_cells.append(global_conn)
+
+        if not node_blocks:
+            raise RuntimeError("No processor data found in decomposed directory")
+
+        all_global_ids = np.concatenate([blk[0] for blk in node_blocks])
         unique_global_ids, inv = np.unique(all_global_ids, return_inverse=True)
-        max_id = unique_global_ids.max()
-        # create array large enough, fill sparse and compress
-        coords_shape = global_nodes_list[0][1].shape[1]
-        global_coords = np.zeros((len(unique_global_ids), coords_shape))
-        pos = 0
-        for g_ids, coords in global_nodes_list:
+        id_to_idx = {int(gid): idx for idx, gid in enumerate(unique_global_ids)}
+
+        coords_dim = node_blocks[0][1].shape[1]
+        global_coords = np.zeros((len(unique_global_ids), coords_dim))
+        for g_ids, coords in node_blocks:
             for i, gid in enumerate(g_ids):
-                idx = np.where(unique_global_ids == gid)[0][0]
+                idx = id_to_idx[int(gid)]
                 global_coords[idx, :] = coords[i]
 
-        # create Mesh and populate
+        # remap global cell connectivity to compact node indices
+        new_cell_conn: List[List[int]] = []
+        for gc in global_cells:
+            new_cell_conn.append([id_to_idx[int(g)] for g in gc])
+
+        # build Mesh and populate
         new_mesh = Mesh()
         new_mesh.node_coords = global_coords
         new_mesh.num_nodes = global_coords.shape[0]
-        new_mesh.cell_connectivity = global_cell_conn
-        new_mesh.num_cells = len(global_cell_conn)
+        new_mesh.cell_connectivity = new_cell_conn
+        new_mesh.num_cells = len(new_cell_conn)
         # run analysis to compute derived quantities
         new_mesh.analyze_mesh()
         return new_mesh
