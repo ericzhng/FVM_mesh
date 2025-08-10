@@ -243,9 +243,9 @@ class Mesh:
 
     def _compute_cell_centroids(self) -> None:
         """Computes the centroid of each element using vectorized operations."""
-        self.cell_centroids = np.zeros((self.nelem, 3))
-        for i, conn in enumerate(self.elem_conn):
-            self.cell_centroids[i] = np.mean(self.node_coords[conn], axis=0)
+        self.cell_centroids = np.array(
+            [np.mean(self.node_coords[conn], axis=0) for conn in self.elem_conn]
+        )
 
     def _extract_faces(self) -> None:
         """Extracts faces for each element based on its dimension."""
@@ -308,7 +308,7 @@ class Mesh:
                     self.cell_neighbors[i, j] = elems[0] if elems[1] == i else elems[1]
 
     def _compute_face_properties(self) -> None:
-        """Computes area, normal, and tangential vectors for each face."""
+        """Computes area and normal vectors for each face."""
         max_faces = self.cell_neighbors.shape[1]
         self.face_areas = np.zeros((self.nelem, max_faces))
         self.face_normals = np.zeros((self.nelem, max_faces, 3))
@@ -443,23 +443,24 @@ class Mesh:
         print("--------------------")
 
     def get_mesh_data(self) -> Dict[str, Any]:
-        """Returns a dictionary containing all computed mesh data."""
-        return {
+        """Returns a dictionary containing essential mesh data for an FVM solver."""
+        mesh_data = {
             "dimension": self.dim,
-            "node_tags": self.node_tags,
             "node_coords": self.node_coords,
-            "elem_tags": self.elem_tags,
             "elem_conn": self.elem_conn,
-            "elem_type_ids": self.elem_type_ids,
             "cell_volumes": self.cell_volumes,
             "cell_centroids": self.cell_centroids,
+            "face_areas": self.face_areas,
+            "face_normals": self.face_normals,
             "cell_neighbors": self.cell_neighbors,
             "boundary_faces_nodes": self.boundary_faces_nodes,
             "boundary_faces_tags": self.boundary_faces_tags,
             "boundary_tag_map": self.boundary_tag_map,
-            "face_areas": self.face_areas,
-            "face_normals": self.face_normals,
         }
+        if self.elem_parts.size > 0:
+            mesh_data["elem_parts"] = self.elem_parts
+            mesh_data["partition_boundary_info"] = self.get_partition_boundary_info()
+        return mesh_data
 
     def get_partition_boundary_cells(self) -> List[Tuple[int, int]]:
         """
@@ -680,17 +681,16 @@ if __name__ == "__main__":
 
         mesh_data = mesh.get_mesh_data()
         print("\n--- Mesh Data Export ---")
-        print(f"First 5 node coordinates:\n{mesh_data['node_coords'][:5]}")
-        print("\nFirst 5 element connectivities:")
-        conn_data = mesh_data["elem_conn"][:5]
-        if conn_data:
-            header = "Element | Connectivity"
-            print(header)
-            print("-" * len(header))
-            for i, conn in enumerate(conn_data):
-                print(f"{i:<7} | {[int(c) for c in conn]}")
-        else:
-            print("No connectivity data.")
+        for key, value in mesh_data.items():
+            if isinstance(value, np.ndarray):
+                print(f"- {key}: array with shape {value.shape}")
+            elif isinstance(value, list):
+                print(f"- {key}: list with {len(value)} items")
+            elif isinstance(value, dict):
+                print(f"- {key}: dictionary with {len(value)} keys")
+            else:
+                print(f"- {key}: {value}")
+        print("------------------------")
 
         if mesh.dim == 2:
             # Labels can be disabled for large meshes to improve performance
