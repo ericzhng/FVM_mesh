@@ -1,6 +1,5 @@
 
 data/*msh
+decomposed/**
 
 *.png
-
-decomposed/**
