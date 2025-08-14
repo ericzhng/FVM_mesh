@@ -1,12 +1,13 @@
+import unittest
 from pathlib import Path
-import os
+import tempfile
+
 import numpy as np
+
 from src.mesh import (
     Mesh,
     PartitionManager,
     build_halo_indices_from_decomposed,
-    mesh_print_summary,
-    partition_print_summary,
 )
 
 
@@ -31,63 +32,62 @@ def make_simple_tet_mesh():
     return m
 
 
-def test_empty_partitions(tmp_path):
-    m = make_simple_tet_mesh()
-    pm = PartitionManager(m)
-    parts = pm.partition_elements(4, method="hierarchical")
-    assert parts.shape[0] == m.num_cells
-    out = tmp_path / "decomp"
-    pm.write_decompose_par_json_npy(
-        str(out) if False else str(out), 4
-    )  # call via method if desired
-    # using helper to write (call the method)
-    pm.write_decompose_par_json_npy(str(out), 4)
-    for p in range(4):
-        proc = out / f"processor{p}"
-        assert proc.exists()
-        assert (proc / "mesh.json").exists()
+class TestMesh(unittest.TestCase):
 
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.tmpdir.name)
 
-def test_reconstruction_roundtrip(tmp_path):
-    m = make_simple_tet_mesh()
-    pm = PartitionManager(m)
-    pm.partition_elements(2, method="hierarchical")
-    out = tmp_path / "decomp2"
-    pm.write_decompose_par_json_npy(str(out), 2)
-    newmesh = pm.reconstruct_par(str(out))
-    assert newmesh.num_cells == m.num_cells
+    def tearDown(self):
+        self.tmpdir.cleanup()
 
+    def test_empty_partitions(self):
 
-def test_halo_builder(tmp_path):
-    m = make_simple_tet_mesh()
-    pm = PartitionManager(m)
-    pm.partition_elements(2, method="hierarchical")
-    out = tmp_path / "decomp3"
-    pm.write_decompose_par_json_npy(str(out), 2)
-    halos = build_halo_indices_from_decomposed(str(out))
-    assert set(halos.keys()) <= {0, 1}
-    for r, info in halos.items():
-        assert isinstance(info["neighbors"], dict)
+        m = make_simple_tet_mesh()
+        pm = PartitionManager(m)
+        parts = pm.partition_elements(4, method="hierarchical")
+        self.assertEqual(parts.shape[0], m.num_cells)
+        out = self.tmp_path / "decomp"
 
+        pm.write_decompose_par_json_npy(str(out), 4)
+        for p in range(4):
+            proc = out / f"processor{p}"
+            self.assertTrue(proc.exists())
+            self.assertTrue((proc / "mesh.json").exists())
 
-def test_gmsh_writer(tmp_path):
-    m = make_simple_tet_mesh()
-    pm = PartitionManager(m)
-    pm.partition_elements(2, method="hierarchical")
-    out = tmp_path / "decomp4"
-    pm.write_decompose_par_json_npy(str(out), 2)
-    pm.write_gmsh_per_processor(str(out), 2)
-    for p in range(2):
-        assert (out / f"processor{p}" / f"processor{p}.msh").exists()
+    def test_reconstruction_roundtrip(self):
+
+        m = make_simple_tet_mesh()
+        pm = PartitionManager(m)
+        pm.partition_elements(2, method="hierarchical")
+        out = self.tmp_path / "decomp2"
+        pm.write_decompose_par_json_npy(str(out), 2)
+        newmesh = pm.reconstruct_par(str(out))
+        self.assertEqual(newmesh.num_cells, m.num_cells)
+
+    def test_halo_builder(self):
+
+        m = make_simple_tet_mesh()
+        pm = PartitionManager(m)
+        pm.partition_elements(2, method="hierarchical")
+        out = self.tmp_path / "decomp3"
+        pm.write_decompose_par_json_npy(str(out), 2)
+        halos = build_halo_indices_from_decomposed(str(out))
+        self.assertTrue(set(halos.keys()).issubset({0, 1}))
+        for r, info in halos.items():
+            self.assertIsInstance(info["neighbors"], dict)
+
+    def test_gmsh_writer(self):
+
+        m = make_simple_tet_mesh()
+        pm = PartitionManager(m)
+        pm.partition_elements(2, method="hierarchical")
+        out = self.tmp_path / "decomp4"
+        pm.write_decompose_par_json_npy(str(out), 2)
+        pm.write_gmsh_per_processor(str(out), 2)
+        for p in range(2):
+            self.assertTrue((out / f"processor{p}" / f"processor{p}.msh").exists())
 
 
 if __name__ == "__main__":
-    import tempfile
-
-    td = tempfile.TemporaryDirectory()
-    base = Path(td.name)
-    test_empty_partitions(base)
-    test_reconstruction_roundtrip(base)
-    test_halo_builder(base)
-    test_gmsh_writer(base)
-    print("All tests passed.")
+    unittest.main()
