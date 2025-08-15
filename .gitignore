@@ -3,3 +3,6 @@ data/*msh
 decomposed/**
 
 *.png
+
+**/*.pyc
+**/__pycache__

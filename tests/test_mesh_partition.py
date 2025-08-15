@@ -4,8 +4,9 @@ import tempfile
 
 import numpy as np
 
-from src.mesh import (
-    Mesh,
+from src.mesh_analysis import Mesh
+
+from src.mesh_partition import (
     PartitionManager,
     build_halo_indices_from_decomposed,
 )
@@ -32,7 +33,7 @@ def make_simple_tet_mesh():
     return m
 
 
-class TestMesh(unittest.TestCase):
+class TestPartitionMesh(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()

@@ -2,7 +2,7 @@ import os
 import gmsh
 
 
-def create_and_mesh_rectangle(
+def create_rect_mesh(
     length,
     height,
     nx,
@@ -185,56 +185,84 @@ def create_and_mesh_rectangle(
     gmsh.finalize()
 
 
-if __name__ == "__main__":
-    # Define rectangle dimensions and the number of elements
-    rect_length = 100.0
-    rect_height = 100.0
-    num_elements_x = 8
-    num_elements_y = 8
+def create_mesh_from_geometry(
+    surface_tag,
+    filename="data/custom_mesh.msh",
+    mesh_type="triangular",
+    char_length=0.1,
+    nx=10,
+    ny=10,
+):
+    """
+    Meshes a given geometry.
 
-    # --- Create Structured Mesh ---
-    print(
-        f"Creating a structured mesh of size {rect_length}x{rect_height} "
-        f"with {num_elements_x}x{num_elements_y} elements."
-    )
-    create_and_mesh_rectangle(
-        rect_length,
-        rect_height,
-        num_elements_x,
-        num_elements_y,
-        filename="data/river_structured.msh",
-        mesh_type="structured",
-    )
-    print("\n" + "=" * 40 + "\n")
+    Args:
+        surface_tag (int): The tag of the surface to mesh.
+        filename (str): The path to save the output .msh file.
+        mesh_type (str): Type of mesh to generate.
+                         Can be "structured" or "triangular".
+        char_length (float): Characteristic length for triangular mesh.
+        nx (int): The number of elements along the x-axis (for structured mesh).
+        ny (int): The number of elements along the y-axis (for structured mesh).
+    """
+    if mesh_type not in ["structured", "triangular"]:
+        raise ValueError("mesh_type must be 'structured' or 'triangular'")
 
-    # --- Create Triangular Mesh ---
-    print(
-        f"Creating a triangular mesh of size {rect_length}x{rect_height} "
-        f"with approximately {num_elements_x}x{num_elements_y}x2 element resolution."
-    )
-    # For triangular mesh, nx and ny control the mesh density at the boundaries
-    create_and_mesh_rectangle(
-        rect_length,
-        rect_height,
-        num_elements_x,
-        num_elements_y,
-        filename="data/river_triangular.msh",
-        mesh_type="triangular",
-    )
-    print("\n" + "=" * 40 + "\n")
+    output_dir = os.path.dirname(filename)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created directory: {output_dir}")
 
-    # --- Create Mixed Mesh ---
-    print(
-        f"Creating a mixed mesh of size {rect_length}x{rect_height} "
-        f"with a structured left side and triangular right side."
-    )
-    create_and_mesh_rectangle(
-        rect_length,
-        rect_height,
-        num_elements_x,
-        num_elements_y,
-        filename="data/river_mixed.msh",
-        mesh_type="mixed",
-    )
+    if mesh_type == "structured":
+        # For structured mesh, we need to define transfinite properties
+        # on all the new curves and surfaces.
+        gmsh.model.mesh.setTransfiniteSurface(surface_tag)
+        gmsh.model.mesh.setRecombine(2, surface_tag)
 
-    print("\nScript finished.")
+        boundary_curves = gmsh.model.getBoundary([(2, surface_tag)], oriented=False)
+
+        if len(boundary_curves) != 4:
+            raise ValueError(
+                "Structured mesh is only supported for geometries with 4 boundary curves."
+            )
+
+        horizontal_curves = []
+        vertical_curves = []
+
+        for curve_dim_tag in boundary_curves:
+            curve_tag = curve_dim_tag[1]
+            p_tags = gmsh.model.getBoundary([curve_dim_tag], oriented=False)
+            p_start_tag = p_tags[0][1]
+            p_end_tag = p_tags[1][1]
+            coord_start = gmsh.model.occ.getCenterOfMass(0, p_start_tag)
+            coord_end = gmsh.model.occ.getCenterOfMass(0, p_end_tag)
+
+            if abs(coord_start[1] - coord_end[1]) < 1e-6:  # Horizontal
+                horizontal_curves.append(curve_tag)
+            else:  # Vertical
+                vertical_curves.append(curve_tag)
+
+        for curve_tag in horizontal_curves:
+            gmsh.model.mesh.setTransfiniteCurve(curve_tag, nx + 1)
+
+        for curve_tag in vertical_curves:
+            gmsh.model.mesh.setTransfiniteCurve(curve_tag, ny + 1)
+
+    elif mesh_type == "triangular":
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length * 0.9)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length * 1.1)
+
+    # --- Physical Groups ---
+    boundary_curves = gmsh.model.getBoundary([(2, surface_tag)], oriented=False)
+    boundary_curve_tags = [c[1] for c in boundary_curves]
+
+    gmsh.model.addPhysicalGroup(1, boundary_curve_tags, name="boundary")
+    gmsh.model.addPhysicalGroup(2, [surface_tag], name="fluid")
+
+    # Generate the 2D mesh
+    gmsh.model.mesh.generate(2)
+
+    # Save the mesh
+    gmsh.write(filename)
+    print(f"Successfully created {mesh_type} mesh.")
+    print(f"Mesh saved to: {filename}")

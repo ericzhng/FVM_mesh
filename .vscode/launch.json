@@ -9,6 +9,8 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src",
