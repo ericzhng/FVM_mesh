@@ -1,0 +1,6 @@
+pyvista
+numpy matplotlib
+gmsh
+scipy
+metis
+pyscotch
