@@ -2,6 +2,8 @@ import os
 import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
 
 
 class Mesh2D:
@@ -41,9 +43,11 @@ class Mesh2D:
 
             params = mesh_params[surface_tag]
             mesh_type = params.get("mesh_type", "triangular")
-            
+
             if mesh_type not in ["structured", "triangular", "quads"]:
-                raise ValueError("mesh_type must be 'structured', 'triangular', or 'quads'")
+                raise ValueError(
+                    "mesh_type must be 'structured', 'triangular', or 'quads'"
+                )
 
             if mesh_type == "structured":
                 char_length = params.get("char_length", 0.1)
@@ -89,7 +93,7 @@ class Mesh2D:
 
                 for curve_tag in vertical_curves:
                     gmsh.model.mesh.setTransfiniteCurve(curve_tag, ny + 1)
-            
+
             elif mesh_type == "quads":
                 gmsh.model.mesh.setRecombine(2, surface_tag)
 
@@ -112,56 +116,62 @@ class Mesh2D:
         print(f"Mesh saved to: {msh_file}")
 
         # Plot the mesh
-        self.plot(filename.replace(".msh", ".png"))
+        self.plot(mesh_params, filename.replace(".msh", ".png"))
 
-    def plot(self, file_name="mesh.png"):
+    def plot(self, mesh_params, file_name="mesh.png"):
         """Plots the generated mesh."""
-        plt.figure()
+        fig, ax = plt.subplots()
 
         # Get nodes
         node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
         x = node_coords[0::3]
         y = node_coords[1::3]
+        node_map = {tag: i for i, tag in enumerate(node_tags)}
 
-        # Get elements
-        elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements()
+        patches = []
+        for surface_tag in self.surface_tags:
+            mesh_type = mesh_params.get(surface_tag, {}).get("mesh_type", "triangular")
 
-        for i, elem_type in enumerate(elem_types):
-            if elem_type == 2:  # Triangles
-                num_elem = len(elem_tags[i])
-                for j in range(num_elem):
-                    node_tags_for_elem = elem_node_tags[i][j * 3 : (j + 1) * 3]
-                    node_indices = [
-                        np.where(node_tags == tag)[0][0] for tag in node_tags_for_elem
-                    ]
+            elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(
+                2, surface_tag
+            )
 
-                    tri_points = np.array([[x[k], y[k]] for k in node_indices])
-                    plt.plot(
-                        np.append(tri_points[:, 0], tri_points[0, 0]),
-                        np.append(tri_points[:, 1], tri_points[0, 1]),
-                        "b-",
-                    )
+            for i, elem_type in enumerate(elem_types):
+                if elem_type == 2:  # Triangles
+                    color = "blue"
+                    if mesh_type in ["structured", "quads"]:
+                        color = "yellow"  # Unexpected triangle
 
-            elif elem_type == 3:  # Quads
-                num_elem = len(elem_tags[i])
-                for j in range(num_elem):
-                    node_tags_for_elem = elem_node_tags[i][j * 4 : (j + 1) * 4]
-                    node_indices = [
-                        np.where(node_tags == tag)[0][0] for tag in node_tags_for_elem
-                    ]
+                    num_elem = len(elem_tags[i])
+                    for j in range(num_elem):
+                        node_tags_for_elem = elem_node_tags[i][j * 3 : (j + 1) * 3]
+                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
+                        tri_points = np.array([[x[k], y[k]] for k in node_indices])
+                        polygon = Polygon(tri_points, facecolor=color, edgecolor="k")
+                        patches.append(polygon)
 
-                    quad_points = np.array([[x[k], y[k]] for k in node_indices])
-                    plt.plot(
-                        np.append(quad_points[:, 0], quad_points[0, 0]),
-                        np.append(quad_points[:, 1], quad_points[0, 1]),
-                        "r-",
-                    )
+                elif elem_type == 3:  # Quads
+                    color = "red"
+                    if mesh_type == "triangular":
+                        color = "green"  # Unexpected quad
+
+                    num_elem = len(elem_tags[i])
+                    for j in range(num_elem):
+                        node_tags_for_elem = elem_node_tags[i][j * 4 : (j + 1) * 4]
+                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
+                        quad_points = np.array([[x[k], y[k]] for k in node_indices])
+                        polygon = Polygon(quad_points, facecolor=color, edgecolor="k")
+                        patches.append(polygon)
+
+        p = PatchCollection(patches, match_original=True)
+        ax.add_collection(p)
 
         plt.title("Generated Mesh")
         plt.xlabel("X")
         plt.ylabel("Y")
-        plt.grid(True)
+        plt.grid(False)
         plt.axis("equal")
+        ax.autoscale_view()
 
         plot_file = os.path.join(self.output_dir, file_name)
         plt.savefig(plot_file)
