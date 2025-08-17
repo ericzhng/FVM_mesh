@@ -4,12 +4,13 @@ import numpy as np
 from scipy.spatial import ConvexHull
 import matplotlib.pyplot as plt
 
+
 class Geometry2D:
     """
     A class to create and manage 2D geometries using gmsh.
     """
 
-    def __init__(self, output_dir="d:/2025-08/FVM_mesh/trunk"):
+    def __init__(self, output_dir="."):
         """
         Initializes the Geometry2D class.
 
@@ -20,7 +21,7 @@ class Geometry2D:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-    def plot_geometry(self, points, file_name="polygon_geometry.png"):
+    def plot(self, points, file_name="polygon_geometry.png"):
         """
         Plots the convex hull of a set of points and saves the plot to a file.
 
@@ -42,7 +43,9 @@ class Geometry2D:
             plt.plot([p1[0], p2[0]], [p1[1], p2[1]], "k-")
 
         # Fill the convex hull
-        plt.fill(hull_points[:, 0], hull_points[:, 1], "r", alpha=0.3, label="Convex Hull")
+        plt.fill(
+            hull_points[:, 0], hull_points[:, 1], "r", alpha=0.3, label="Convex Hull"
+        )
 
         plt.title("Polygon Geometry from Unorganized Points")
         plt.xlabel("X")
@@ -54,9 +57,9 @@ class Geometry2D:
         plot_file = os.path.join(self.output_dir, file_name)
         plt.savefig(plot_file)
         print(f"Plot saved to {plot_file}")
-        # plt.show() # Uncomment to display the plot
+        plt.show()  # Uncomment to display the plot
 
-    def create_polygon(self, points, mesh_size=0.1):
+    def polygon(self, points, convex_hull=False, mesh_size=0.1):
         """
         Creates a gmsh geometry from a list of unorganized 2D points.
         The geometry is based on the convex hull of the points.
@@ -73,13 +76,18 @@ class Geometry2D:
             raise ValueError("At least 3 points are required to create a polygon.")
 
         points = np.array(points)
-        hull = ConvexHull(points)
-        hull_points = points[hull.vertices]
+        if convex_hull:
+            hull = ConvexHull(points)
+            hull_points = points[hull.vertices]
+        else:
+            hull_points = points
 
         # Add points to gmsh
         gmsh_points = []
         for point in hull_points:
-            gmsh_points.append(gmsh.model.geo.addPoint(point[0], point[1], 0, mesh_size))
+            gmsh_points.append(
+                gmsh.model.geo.addPoint(point[0], point[1], 0, mesh_size)
+            )
 
         # Create lines
         lines = []
@@ -98,15 +106,15 @@ class Geometry2D:
 
         return surface
 
-    def create_rectangle(self, x, y, width, height, mesh_size=0.1):
+    def rectangle(self, length, width, x=0.0, y=0.0, mesh_size=0.1):
         """
         Creates a rectangular geometry in gmsh.
 
         Args:
             x (float): The x-coordinate of the bottom-left corner.
             y (float): The y-coordinate of the bottom-left corner.
+            length (float): The length of the rectangle.
             width (float): The width of the rectangle.
-            height (float): The height of the rectangle.
             mesh_size (float): The desired mesh size.
 
         Returns:
@@ -114,9 +122,9 @@ class Geometry2D:
         """
         # Add points to gmsh
         p1 = gmsh.model.geo.addPoint(x, y, 0, mesh_size)
-        p2 = gmsh.model.geo.addPoint(x + width, y, 0, mesh_size)
-        p3 = gmsh.model.geo.addPoint(x + width, y + height, 0, mesh_size)
-        p4 = gmsh.model.geo.addPoint(x, y + height, 0, mesh_size)
+        p2 = gmsh.model.geo.addPoint(x + length, y, 0, mesh_size)
+        p3 = gmsh.model.geo.addPoint(x + length, y + width, 0, mesh_size)
+        p4 = gmsh.model.geo.addPoint(x, y + width, 0, mesh_size)
 
         # Create lines
         l1 = gmsh.model.geo.addLine(p1, p2)
@@ -132,7 +140,7 @@ class Geometry2D:
 
         return surface
 
-    def create_circle(self, x, y, radius, mesh_size=0.1):
+    def circle(self, radius, x=0.0, y=0.0, mesh_size=0.1):
         """
         Creates a circular geometry in gmsh.
 
@@ -168,7 +176,7 @@ class Geometry2D:
 
         return surface
 
-    def create_triangle(self, p1, p2, p3, mesh_size=0.1):
+    def triangle(self, p1, p2, p3, mesh_size=0.1):
         """
         Creates a triangular geometry in gmsh.
 
@@ -199,7 +207,7 @@ class Geometry2D:
 
         return surface
 
-    def create_ellipse(self, x, y, r1, r2, mesh_size=0.1):
+    def ellipse(self, r1, r2, x=0.0, y=0.0, mesh_size=0.1):
         """
         Creates an elliptical geometry in gmsh.
 
