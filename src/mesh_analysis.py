@@ -2,6 +2,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 
 import gmsh
+import matplotlib.pyplot as plt  # New import for 2D plotting
+import pyvista as pv  # New import for 3D plotting
 
 
 class Mesh:
@@ -24,9 +26,7 @@ class Mesh:
 
         # geometry/connectivity
         self.node_coords: np.ndarray = np.array([])  # (N,3)
-        self.cell_connectivity: List[List[int]] = (
-            []
-        )  # list of node index lists per cell
+        self.cell_connectivity: List[List[int]] = []
         self.cell_type_ids: np.ndarray = np.array([])
         self.cell_type_map: Dict[int, Dict[str, Any]] = {}
 
@@ -43,6 +43,12 @@ class Mesh:
         self.face_normals: np.ndarray = np.array([])
         self.face_areas: np.ndarray = np.array([])
         self.cell_neighbors: np.ndarray = np.array([])
+
+        # Analysis flag
+        self._is_analyzed: bool = False  # New flag
+
+        # Internal gmsh node tag to index mapping
+        self._tag_to_index: Dict[int, int] = {}
 
     # ---------- I/O ----------
     def read_gmsh(self, msh_file: str, gmsh_verbose: int = 0) -> None:
@@ -61,7 +67,7 @@ class Mesh:
             coords = np.array(raw_coords).reshape(-1, 3)
             self.node_coords = coords
             self.num_nodes = coords.shape[0]
-            self._gmsh_node_tags = np.array(raw_tags)
+            # self._gmsh_node_tags = np.array(raw_tags) # Not strictly needed as an attribute
             self._tag_to_index = {int(t): i for i, t in enumerate(raw_tags)}
 
             elem_types, elem_tags_list, connectivity_list = (
@@ -179,6 +185,7 @@ class Mesh:
         self._compute_cell_neighbors()
         self._compute_face_midpoints_areas_normals()
         self._compute_cell_volumes()
+        self._is_analyzed = True  # Set flag after successful analysis
 
     def _compute_centroids(self) -> None:
         self.cell_centroids = np.array(
@@ -321,6 +328,290 @@ class Mesh:
             "boundary_faces_tags": self.boundary_faces_tags,
             "boundary_tag_map": self.boundary_tag_map,
         }
+
+    def plot_mesh(
+        self, max_elements_for_labels: int = 50, show_plot: bool = True
+    ) -> None:
+        """Plots the mesh.
+
+        If analyze_mesh has been run, plots with surface normals, element tags, and areas.
+        If the mesh has too many elements (controlled by max_elements_for_labels),
+        labels are skipped.
+
+        Args:
+            max_elements_for_labels: Maximum number of elements to display labels for.
+            show_plot: Whether to display the plot immediately.
+        """
+        if self.num_cells == 0:
+            print("No mesh data to plot. Load a mesh first.")
+            return
+
+        plot_labels = self._is_analyzed and self.num_cells <= max_elements_for_labels
+        plot_normals = self._is_analyzed
+        plot_element_tags = (
+            self._is_analyzed and self.num_cells <= max_elements_for_labels
+        )
+        plot_areas = self._is_analyzed and self.num_cells <= max_elements_for_labels
+
+        if self.dimension == 2:
+            self._plot_2d_mesh(
+                plot_labels, plot_normals, plot_element_tags, plot_areas, show_plot
+            )
+        elif self.dimension == 3:
+            self._plot_3d_mesh(
+                plot_labels, plot_normals, plot_element_tags, plot_areas, show_plot
+            )
+        else:
+            print(f"Plotting not supported for mesh dimension {self.dimension}")
+
+    def _plot_2d_mesh(
+        self,
+        plot_labels: bool,
+        plot_normals: bool,
+        plot_element_tags: bool,
+        plot_areas: bool,
+        show_plot: bool,
+    ) -> None:
+        """Helper to plot 2D meshes."""
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_title("2D Mesh Plot")
+
+        # Plot nodes
+        ax.plot(
+            self.node_coords[:, 0],
+            self.node_coords[:, 1],
+            "o",
+            markersize=2,
+            color="blue",
+            label="Nodes",
+        )
+
+        # Plot cells and their properties
+        for i, cell_conn in enumerate(self.cell_connectivity):
+            nodes = self.node_coords[cell_conn]
+            # Plot cell edges
+            if self.dimension == 2:  # For 2D, cells are polygons
+                poly = plt.Polygon(
+                    nodes[:, :2],
+                    closed=True,
+                    fill=None,
+                    edgecolor="black",
+                    linewidth=0.5,
+                )
+                ax.add_patch(poly)
+
+            if plot_labels:
+                # Plot cell centroids
+                centroid = self.cell_centroids[i]
+                ax.plot(centroid[0], centroid[1], "x", markersize=5, color="red")
+                ax.text(centroid[0], centroid[1], f"C{i}", color="red", fontsize=8)
+
+            if plot_element_tags:
+                # Display element tags (cell type IDs)
+                cell_type_id = self.cell_type_ids[i]
+                centroid = self.cell_centroids[i]
+                ax.text(
+                    centroid[0],
+                    centroid[1] + 0.05,
+                    f"Tag:{cell_type_id}",
+                    color="purple",
+                    fontsize=7,
+                )
+
+            if plot_areas:
+                # Display cell areas
+                area = self.cell_volumes[i]  # For 2D, volume is area
+                centroid = self.cell_centroids[i]
+                ax.text(
+                    centroid[0],
+                    centroid[1] - 0.05,
+                    f"Area:{area:.2f}",
+                    color="green",
+                    fontsize=7,
+                )
+
+            if plot_normals and self._is_analyzed:
+                # Plot face normals
+                for fi, face_nodes_indices in enumerate(self.cell_faces[i]):
+                    face_midpoint = self.face_midpoints[i, fi]
+                    face_normal = self.face_normals[i, fi]
+                    face_area = self.face_areas[i, fi]
+
+                    # Scale normal for visibility
+                    normal_scale = 0.1 * np.max(
+                        self.node_coords.max(axis=0) - self.node_coords.min(axis=0)
+                    )
+                    ax.arrow(
+                        face_midpoint[0],
+                        face_midpoint[1],
+                        face_normal[0] * normal_scale,
+                        face_normal[1] * normal_scale,
+                        head_width=0.02 * normal_scale,
+                        head_length=0.03 * normal_scale,
+                        fc="orange",
+                        ec="orange",
+                    )
+                    if (
+                        plot_labels
+                    ):  # Only label normals if labels are generally enabled
+                        ax.text(
+                            face_midpoint[0] + face_normal[0] * normal_scale * 1.1,
+                            face_midpoint[1] + face_normal[1] * normal_scale * 1.1,
+                            f"N{fi}",
+                            color="orange",
+                            fontsize=6,
+                        )
+                        ax.text(
+                            face_midpoint[0] + face_normal[0] * normal_scale * 1.2,
+                            face_midpoint[1] + face_normal[1] * normal_scale * 1.2,
+                            f"A:{face_area:.2f}",
+                            color="brown",
+                            fontsize=6,
+                        )
+
+        ax.legend()
+        ax.grid(True)
+        if show_plot:
+            plt.show()
+
+    def _plot_3d_mesh(
+        self,
+        plot_labels: bool,
+        plot_normals: bool,
+        plot_element_tags: bool,
+        plot_areas: bool,
+        show_plot: bool,
+    ) -> None:
+        """Helper to plot 3D meshes using PyVista."""
+        if not pv:
+            print("PyVista not available. Cannot plot 3D mesh.")
+            return
+
+        # Create a PyVista UnstructuredGrid from the mesh data
+        # PyVista expects cell types and connectivity in a specific format
+        # This conversion can be complex depending on the variety of cell types
+        # For simplicity, let's assume all cells are of a single type for now,
+        # or handle common types.
+        # A more robust solution would iterate through cell_type_ids and
+        # create separate meshes or handle different cell types.
+
+        # PyVista cell types mapping (example for common types)
+        # This needs to be comprehensive for all types in self.cell_type_map
+        pv_cell_type_map = {
+            "tetra": pv.CellType.TETRA,
+            "hexahedron": pv.CellType.HEXAHEDRON,
+            "triangle": pv.CellType.TRIANGLE,
+            "quadrangle": pv.CellType.QUAD,
+            # Add more as needed
+        }
+
+        # PyVista requires a flat connectivity array with cell sizes
+        cells = []
+        cell_types = []
+        for i, conn in enumerate(self.cell_connectivity):
+            cell_type_id = self.cell_type_ids[i]
+            cell_info = self.cell_type_map[cell_type_id]
+            cell_name = cell_info["name"].lower()  # e.g., 'tetra', 'hexahedron'
+
+            if cell_name in pv_cell_type_map:
+                cells.append(len(conn))  # Number of nodes in the cell
+                cells.extend(conn)  # Node indices
+                cell_types.append(pv_cell_type_map[cell_name])
+            else:
+                print(
+                    f"Warning: Cell type '{cell_name}' not directly supported by PyVista for plotting. Skipping."
+                )
+                # Fallback: plot as points or edges if type is unknown
+                # For now, just skip.
+
+        if not cells:
+            print("No supported cells to plot in 3D.")
+            return
+
+        grid = pv.UnstructuredGrid(
+            np.array(cells), np.array(cell_types), self.node_coords
+        )
+
+        plotter = pv.Plotter(window_size=[1024, 768])
+        plotter.add_mesh(grid, show_edges=True, color="lightblue", opacity=0.8)
+
+        if plot_labels:
+            # Plot cell centroids
+            plotter.add_points(
+                self.cell_centroids,
+                color="red",
+                render_points_as_spheres=True,
+                point_size=10,
+                label="Centroids",
+            )
+            for i, centroid in enumerate(self.cell_centroids):
+                plotter.add_text(f"C{i}", position=centroid, color="red", font_size=8)
+
+        if plot_element_tags:
+            for i, centroid in enumerate(self.cell_centroids):
+                cell_type_id = self.cell_type_ids[i]
+                plotter.add_text(
+                    f"Tag:{cell_type_id}",
+                    position=centroid + [0, 0, 0.05],
+                    color="purple",
+                    font_size=7,
+                )
+
+        if plot_areas:
+            for i, centroid in enumerate(self.cell_centroids):
+                area = self.cell_volumes[i]  # For 3D, volume is volume
+                plotter.add_text(
+                    f"Vol:{area:.2f}",
+                    position=centroid + [0, 0, -0.05],
+                    color="green",
+                    font_size=7,
+                )
+
+        if plot_normals and self._is_analyzed:
+            # Plot face normals
+            for ci in range(self.num_cells):
+                for fi in range(len(self.cell_faces[ci])):
+                    face_midpoint = self.face_midpoints[ci, fi]
+                    face_normal = self.face_normals[ci, fi]
+                    face_area = self.face_areas[ci, fi]
+
+                    # Scale normal for visibility
+                    # Adjust scale based on mesh size
+                    mesh_bounds = grid.bounds
+                    max_dim = max(
+                        mesh_bounds[1] - mesh_bounds[0],
+                        mesh_bounds[3] - mesh_bounds[2],
+                        mesh_bounds[5] - mesh_bounds[4],
+                    )
+                    normal_scale = 0.05 * max_dim
+
+                    plotter.add_mesh(
+                        pv.Arrow(face_midpoint, face_normal * normal_scale),
+                        color="orange",
+                    )
+                    if (
+                        plot_labels
+                    ):  # Only label normals if labels are generally enabled
+                        plotter.add_text(
+                            f"N{fi}",
+                            position=face_midpoint + face_normal * normal_scale * 1.1,
+                            color="orange",
+                            font_size=6,
+                        )
+                        plotter.add_text(
+                            f"A:{face_area:.2f}",
+                            position=face_midpoint + face_normal * normal_scale * 1.2,
+                            color="brown",
+                            font_size=6,
+                        )
+
+        plotter.add_axes()
+        plotter.show_grid()
+        if show_plot:
+            plotter.show()
 
 
 if __name__ == "__main__":
