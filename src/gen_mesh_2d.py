@@ -120,7 +120,7 @@ class Mesh2D:
 
     def plot(self, mesh_params, file_name="mesh.png"):
         """Plots the generated mesh."""
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 8))
 
         # Get nodes
         node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
@@ -174,6 +174,6 @@ class Mesh2D:
         ax.autoscale_view()
 
         plot_file = os.path.join(self.output_dir, file_name)
-        plt.savefig(plot_file)
+        plt.savefig(plot_file, dpi=300)
         plt.close()
         print(f"Mesh plot saved to: {plot_file}")
