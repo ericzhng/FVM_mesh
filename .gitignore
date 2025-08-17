@@ -8,3 +8,5 @@ decomposed/**
 **/__pycache__
 
 trunk/**
+
+*.msh

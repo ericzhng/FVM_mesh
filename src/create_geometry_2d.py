@@ -164,6 +164,8 @@ class Geometry2D:
         mesh_size: float = 0.1,
     ) -> list:
         """Creates a rectangular geometry with partitions using fragmentation."""
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", mesh_size)
+
         # Create the main rectangle
         rectangle = gmsh.model.occ.addRectangle(x, y, 0, length, width)
 

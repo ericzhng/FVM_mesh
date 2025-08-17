@@ -12,25 +12,20 @@ class TestMesh2D(unittest.TestCase):
         os.makedirs(self.output_dir, exist_ok=True)
         gmsh.initialize()
 
-        # Create a simple geometry for testing
-        self.geom = Geometry2D(output_dir=self.output_dir)
-        self.surface_tag = self.geom.rectangle(length=1, width=1, mesh_size=0.5)
-        gmsh.model.occ.synchronize()
-
     def tearDown(self):
         """Tear down the test case."""
         gmsh.finalize()
-        # Clean up generated files
-        # for f in os.listdir(self.output_dir):
-        #     os.remove(os.path.join(self.output_dir, f))
-        # os.rmdir(self.output_dir)
 
     def test_triangular_mesh_generation(self):
         """Test the generation of a triangular mesh."""
-        mesher = Mesh2D(surface_tags=self.surface_tag, output_dir=self.output_dir)
+        geom = Geometry2D(output_dir=self.output_dir)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.1)
+        gmsh.model.occ.synchronize()
+        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "triangular_mesh.msh"
         plot_filename = "triangular_mesh.png"
-        mesher.generate(mesh_type="triangular", char_length=0.1, filename=mesh_filename)
+        mesh_params = {surface_tag: {"mesh_type": "triangular", "char_length": 0.1}}
+        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
 
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
@@ -41,10 +36,32 @@ class TestMesh2D(unittest.TestCase):
 
     def test_structured_mesh_generation(self):
         """Test the generation of a structured mesh."""
-        mesher = Mesh2D(surface_tags=self.surface_tag, output_dir=self.output_dir)
+        geom = Geometry2D(output_dir=self.output_dir)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.2)
+        gmsh.model.occ.synchronize()
+        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "structured_mesh.msh"
         plot_filename = "structured_mesh.png"
-        mesher.generate(mesh_type="structured", char_length=0.2, filename=mesh_filename)
+        mesh_params = {surface_tag: {"mesh_type": "structured", "char_length": 0.2}}
+        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+
+        # Check if the mesh and plot files are created
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
+
+        # For visual debugging, you can uncomment the following line.
+        gmsh.fltk.run()
+
+    def test_quad_mesh_generation(self):
+        """Test the generation of a quad mesh."""
+        geom = Geometry2D(output_dir=self.output_dir)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.1)
+        gmsh.model.occ.synchronize()
+        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesh_filename = "quad_mesh.msh"
+        plot_filename = "quad_mesh.png"
+        mesh_params = {surface_tag: {"mesh_type": "quads"}}
+        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
 
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
@@ -55,9 +72,46 @@ class TestMesh2D(unittest.TestCase):
 
     def test_invalid_mesh_type(self):
         """Test that an invalid mesh type raises a ValueError."""
-        mesher = Mesh2D(surface_tags=self.surface_tag, output_dir=self.output_dir)
+        geom = Geometry2D(output_dir=self.output_dir)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.5)
+        gmsh.model.occ.synchronize()
+        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesh_params = {surface_tag: {"mesh_type": "invalid_type"}}
         with self.assertRaises(ValueError):
-            mesher.generate(mesh_type="invalid_type")
+            mesher.generate(mesh_params=mesh_params)
+
+    def test_mixed_mesh_generation(self):
+        """Test the generation of a mixed structured and triangular mesh."""
+        # 1. Create geometry with partitions, setting the global mesh size.
+        geom = Geometry2D(output_dir=self.output_dir)
+        surfaces = geom.rectangle_with_partitions(length=2, width=1, mesh_size=0.2)
+        gmsh.model.occ.synchronize()
+
+        self.assertEqual(len(surfaces), 4)
+
+        # 2. We will mesh all four surfaces for this test
+        mesher = Mesh2D(surface_tags=surfaces, output_dir=self.output_dir)
+
+        # 3. Define mesh parameters for all four surfaces
+        mesh_params = {
+            surfaces[0]: {"mesh_type": "structured", "char_length": 0.2},
+            surfaces[1]: {"mesh_type": "quads"},
+            surfaces[2]: {"mesh_type": "triangular"},
+            surfaces[3]: {"mesh_type": "quads"},
+        }
+
+        mesh_filename = "mixed_mesh_all_surfaces.msh"
+        plot_filename = "mixed_mesh_all_surfaces.png"
+
+        # 4. Generate the mesh
+        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+
+        # 5. Check if all files are created
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
+
+        # For visual debugging, you can uncomment the following line.
+        gmsh.fltk.run()
 
 
 if __name__ == "__main__":

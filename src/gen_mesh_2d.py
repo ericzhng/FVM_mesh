@@ -24,23 +24,29 @@ class Mesh2D:
 
     def generate(
         self,
-        mesh_type="triangular",
-        char_length=0.1,
+        mesh_params: dict,
         filename="mesh.msh",
     ):
         """
         Generates the mesh.
 
         Args:
-            mesh_type (str): Type of mesh to generate ('structured' or 'triangular').
-            char_length (float): Characteristic length for the mesh.
+            mesh_params (dict): A dictionary where keys are surface tags and values are dicts
+                                with 'mesh_type' and 'char_length'.
             filename (str): The path to save the output .msh file.
         """
-        if mesh_type not in ["structured", "triangular"]:
-            raise ValueError("mesh_type must be 'structured' or 'triangular'")
+        for surface_tag in self.surface_tags:
+            if surface_tag not in mesh_params:
+                continue
 
-        if mesh_type == "structured":
-            for surface_tag in self.surface_tags:
+            params = mesh_params[surface_tag]
+            mesh_type = params.get("mesh_type", "triangular")
+            
+            if mesh_type not in ["structured", "triangular", "quads"]:
+                raise ValueError("mesh_type must be 'structured', 'triangular', or 'quads'")
+
+            if mesh_type == "structured":
+                char_length = params.get("char_length", 0.1)
                 # For structured mesh, we need to define transfinite properties
                 # on all the new curves and surfaces.
                 gmsh.model.mesh.setTransfiniteSurface(surface_tag)
@@ -83,10 +89,9 @@ class Mesh2D:
 
                 for curve_tag in vertical_curves:
                     gmsh.model.mesh.setTransfiniteCurve(curve_tag, ny + 1)
-
-        elif mesh_type == "triangular":
-            gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length * 0.9)
-            gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length * 1.1)
+            
+            elif mesh_type == "quads":
+                gmsh.model.mesh.setRecombine(2, surface_tag)
 
         # --- Physical Groups ---
         all_boundary_curves = []
@@ -103,7 +108,7 @@ class Mesh2D:
         # Save the mesh
         msh_file = os.path.join(self.output_dir, filename)
         gmsh.write(msh_file)
-        print(f"Successfully created {mesh_type} mesh.")
+        print(f"Successfully created mesh.")
         print(f"Mesh saved to: {msh_file}")
 
         # Plot the mesh
