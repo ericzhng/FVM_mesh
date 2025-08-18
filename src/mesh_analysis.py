@@ -3,6 +3,10 @@ from typing import Dict, List, Tuple, Any
 
 import gmsh
 import matplotlib.pyplot as plt  # New import for 2D plotting
+from matplotlib.patches import Polygon  # New import for Polygon
+from matplotlib.collections import (
+    PolyCollection,
+)  # New import for efficient 2D plotting
 import pyvista as pv  # New import for 3D plotting
 
 
@@ -43,6 +47,13 @@ class Mesh:
         self.face_normals: np.ndarray = np.array([])
         self.face_areas: np.ndarray = np.array([])
         self.cell_neighbors: np.ndarray = np.array([])
+
+        # Quality metrics
+        self.min_max_volume_ratio: float = 0.0
+        self.cell_skewness_values: np.ndarray = np.array([])
+        self.cell_non_orthogonality_values: np.ndarray = np.array([])
+        self.cell_aspect_ratio_values: np.ndarray = np.array([])
+        self.connectivity_issues: List[str] = []
 
         # Analysis flag
         self._is_analyzed: bool = False  # New flag
@@ -312,306 +323,189 @@ class Mesh:
             # Unknown geometric type: set zero volumes
             self.cell_volumes = np.zeros(self.num_cells)
 
-    def get_mesh_data(self) -> Dict[str, Any]:
-        """Return structured data useful for FVM solver or partition writer."""
-        return {
-            "dimension": int(self.dimension),
-            "node_coords": self.node_coords,
-            "cell_connectivity": self.cell_connectivity,
-            "cell_type_ids": self.cell_type_ids,
-            "cell_volumes": self.cell_volumes,
-            "cell_centroids": self.cell_centroids,
-            "face_areas": self.face_areas,
-            "face_normals": self.face_normals,
-            "cell_neighbors": self.cell_neighbors,
-            "boundary_faces_nodes": self.boundary_faces_nodes,
-            "boundary_faces_tags": self.boundary_faces_tags,
-            "boundary_tag_map": self.boundary_tag_map,
-        }
+    def compute_quality(self) -> None:
+        """Computes mesh quality metrics and stores them as attributes."""
+        if not self._is_analyzed:
+            raise RuntimeError("Mesh must be analyzed before computing quality.")
 
-    def plot_mesh(
-        self, max_elements_for_labels: int = 50, show_plot: bool = True
-    ) -> None:
-        """Plots the mesh.
+        # Initialize quality metrics
+        self.min_max_volume_ratio = 0.0
+        self.cell_skewness_values = np.zeros(self.num_cells)
+        self.cell_non_orthogonality_values = np.zeros(self.num_cells)
+        self.cell_aspect_ratio_values = np.zeros(self.num_cells)
+        self.connectivity_issues = []
 
-        If analyze_mesh has been run, plots with surface normals, element tags, and areas.
-        If the mesh has too many elements (controlled by max_elements_for_labels),
-        labels are skipped.
-
-        Args:
-            max_elements_for_labels: Maximum number of elements to display labels for.
-            show_plot: Whether to display the plot immediately.
-        """
         if self.num_cells == 0:
-            print("No mesh data to plot. Load a mesh first.")
             return
 
-        plot_labels = self._is_analyzed and self.num_cells <= max_elements_for_labels
-        plot_normals = self._is_analyzed
-        plot_element_tags = (
-            self._is_analyzed and self.num_cells <= max_elements_for_labels
-        )
-        plot_areas = self._is_analyzed and self.num_cells <= max_elements_for_labels
-
-        if self.dimension == 2:
-            self._plot_2d_mesh(
-                plot_labels, plot_normals, plot_element_tags, plot_areas, show_plot
-            )
-        elif self.dimension == 3:
-            self._plot_3d_mesh(
-                plot_labels, plot_normals, plot_element_tags, plot_areas, show_plot
-            )
+        # 1. Ratio of smallest to biggest cell volume
+        min_volume = np.min(self.cell_volumes)
+        max_volume = np.max(self.cell_volumes)
+        if max_volume > 0:
+            self.min_max_volume_ratio = min_volume / max_volume
         else:
-            print(f"Plotting not supported for mesh dimension {self.dimension}")
+            self.min_max_volume_ratio = 0.0
 
-    def _plot_2d_mesh(
-        self,
-        plot_labels: bool,
-        plot_normals: bool,
-        plot_element_tags: bool,
-        plot_areas: bool,
-        show_plot: bool,
-    ) -> None:
-        """Helper to plot 2D meshes."""
-        fig, ax = plt.subplots(figsize=(10, 8))
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_title("2D Mesh Plot")
+        # Ensure cell_faces is populated for non-orthogonality and aspect ratio
+        if not self.cell_faces:
+            self._extract_cell_faces()  # Re-extract if not already done
 
-        # Plot nodes
-        ax.plot(
-            self.node_coords[:, 0],
-            self.node_coords[:, 1],
-            "o",
-            markersize=2,
-            color="blue",
-            label="Nodes",
-        )
+        # 2. Skewness, Non-Orthogonality, and Aspect Ratio (2D only for now)
+        if self.dimension == 2:
+            for i, conn in enumerate(self.cell_connectivity):
+                nodes = self.node_coords[conn][:, :2]
+                num_nodes_in_cell = len(nodes)
 
-        # Plot cells and their properties
-        for i, cell_conn in enumerate(self.cell_connectivity):
-            nodes = self.node_coords[cell_conn]
-            # Plot cell edges
-            if self.dimension == 2:  # For 2D, cells are polygons
-                poly = plt.Polygon(
-                    nodes[:, :2],
-                    closed=True,
-                    fill=None,
-                    edgecolor="black",
-                    linewidth=0.5,
-                )
-                ax.add_patch(poly)
+                # Skewness (angle-based)
+                if num_nodes_in_cell == 3:  # Triangle
+                    v0 = nodes[1] - nodes[0]
+                    v1 = nodes[2] - nodes[1]
+                    v2 = nodes[0] - nodes[2]
+                    l0 = np.linalg.norm(v0)
+                    l1 = np.linalg.norm(v1)
+                    l2 = np.linalg.norm(v2)
 
-            if plot_labels:
-                # Plot cell centroids
-                centroid = self.cell_centroids[i]
-                ax.plot(centroid[0], centroid[1], "x", markersize=5, color="red")
-                ax.text(centroid[0], centroid[1], f"C{i}", color="red", fontsize=8)
+                    if l0 > 0 and l1 > 0 and l2 > 0:
+                        angle0 = np.degrees(np.arccos(np.dot(-v2, v0) / (l2 * l0)))
+                        angle1 = np.degrees(np.arccos(np.dot(-v0, v1) / (l0 * l1)))
+                        angle2 = np.degrees(np.arccos(np.dot(-v1, v2) / (l1 * l2)))
+                        angles = np.array([angle0, angle1, angle2])
+                        self.cell_skewness_values[i] = np.max(np.abs(angles - 60)) / 60
+                    else:
+                        self.cell_skewness_values[i] = 1.0  # Degenerate triangle
 
-            if plot_element_tags:
-                # Display element tags (cell type IDs)
-                cell_type_id = self.cell_type_ids[i]
-                centroid = self.cell_centroids[i]
-                ax.text(
-                    centroid[0],
-                    centroid[1] + 0.05,
-                    f"Tag:{cell_type_id}",
-                    color="purple",
-                    fontsize=7,
-                )
+                    # Aspect Ratio (longest edge / shortest edge)
+                    edge_lengths = np.array([l0, l1, l2])
+                    if np.min(edge_lengths) > 0:
+                        self.cell_aspect_ratio_values[i] = np.max(
+                            edge_lengths
+                        ) / np.min(edge_lengths)
+                    else:
+                        self.cell_aspect_ratio_values[i] = np.inf  # Degenerate
 
-            if plot_areas:
-                # Display cell areas
-                area = self.cell_volumes[i]  # For 2D, volume is area
-                centroid = self.cell_centroids[i]
-                ax.text(
-                    centroid[0],
-                    centroid[1] - 0.05,
-                    f"Area:{area:.2f}",
-                    color="green",
-                    fontsize=7,
-                )
+                elif num_nodes_in_cell == 4:  # Quadrilateral
+                    # Skewness (angle-based)
+                    angles = []
+                    for j in range(num_nodes_in_cell):
+                        p_prev = nodes[(j - 1 + num_nodes_in_cell) % num_nodes_in_cell]
+                        p_curr = nodes[j]
+                        p_next = nodes[(j + 1) % num_nodes_in_cell]
 
-            if plot_normals and self._is_analyzed:
-                # Plot face normals
-                for fi, face_nodes_indices in enumerate(self.cell_faces[i]):
-                    face_midpoint = self.face_midpoints[i, fi]
-                    face_normal = self.face_normals[i, fi]
-                    face_area = self.face_areas[i, fi]
+                        v1 = p_prev - p_curr
+                        v2 = p_next - p_curr
 
-                    # Scale normal for visibility
-                    normal_scale = 0.1 * np.max(
-                        self.node_coords.max(axis=0) - self.node_coords.min(axis=0)
-                    )
-                    ax.arrow(
-                        face_midpoint[0],
-                        face_midpoint[1],
-                        face_normal[0] * normal_scale,
-                        face_normal[1] * normal_scale,
-                        head_width=0.02 * normal_scale,
-                        head_length=0.03 * normal_scale,
-                        fc="orange",
-                        ec="orange",
-                    )
-                    if (
-                        plot_labels
-                    ):  # Only label normals if labels are generally enabled
-                        ax.text(
-                            face_midpoint[0] + face_normal[0] * normal_scale * 1.1,
-                            face_midpoint[1] + face_normal[1] * normal_scale * 1.1,
-                            f"N{fi}",
-                            color="orange",
-                            fontsize=6,
+                        l1 = np.linalg.norm(v1)
+                        l2 = np.linalg.norm(v2)
+
+                        if l1 > 0 and l2 > 0:
+                            dot_product = np.dot(v1, v2)
+                            angle = np.degrees(
+                                np.arccos(np.clip(dot_product / (l1 * l2), -1.0, 1.0))
+                            )
+                            angles.append(angle)
+                        else:
+                            angles.append(180.0)  # Degenerate edge
+
+                    if angles:
+                        self.cell_skewness_values[i] = (
+                            np.max(np.abs(np.array(angles) - 90)) / 90
                         )
-                        ax.text(
-                            face_midpoint[0] + face_normal[0] * normal_scale * 1.2,
-                            face_midpoint[1] + face_normal[1] * normal_scale * 1.2,
-                            f"A:{face_area:.2f}",
-                            color="brown",
-                            fontsize=6,
+                    else:
+                        self.cell_skewness_values[i] = 1.0  # Degenerate quad
+
+                    # Aspect Ratio (longest edge / shortest edge)
+                    edge_lengths = []
+                    for j in range(num_nodes_in_cell):
+                        edge_lengths.append(
+                            np.linalg.norm(
+                                nodes[j] - nodes[(j + 1) % num_nodes_in_cell]
+                            )
                         )
+                    edge_lengths = np.array(edge_lengths)
+                    if np.min(edge_lengths) > 0:
+                        self.cell_aspect_ratio_values[i] = np.max(
+                            edge_lengths
+                        ) / np.min(edge_lengths)
+                    else:
+                        self.cell_aspect_ratio_values[i] = np.inf  # Degenerate
 
-        ax.legend()
-        ax.grid(True)
-        if show_plot:
-            plt.show()
+                else:
+                    # For other 2D cell types, skewness/aspect ratio not computed
+                    self.cell_skewness_values[i] = 0.0
+                    self.cell_aspect_ratio_values[i] = 0.0
 
-    def _plot_3d_mesh(
-        self,
-        plot_labels: bool,
-        plot_normals: bool,
-        plot_element_tags: bool,
-        plot_areas: bool,
-        show_plot: bool,
-    ) -> None:
-        """Helper to plot 3D meshes using PyVista."""
-        if not pv:
-            print("PyVista not available. Cannot plot 3D mesh.")
-            return
-
-        # Create a PyVista UnstructuredGrid from the mesh data
-        # PyVista expects cell types and connectivity in a specific format
-        # This conversion can be complex depending on the variety of cell types
-        # For simplicity, let's assume all cells are of a single type for now,
-        # or handle common types.
-        # A more robust solution would iterate through cell_type_ids and
-        # create separate meshes or handle different cell types.
-
-        # PyVista cell types mapping (example for common types)
-        # This needs to be comprehensive for all types in self.cell_type_map
-        pv_cell_type_map = {
-            "tetra": pv.CellType.TETRA,
-            "hexahedron": pv.CellType.HEXAHEDRON,
-            "triangle": pv.CellType.TRIANGLE,
-            "quadrangle": pv.CellType.QUAD,
-            # Add more as needed
-        }
-
-        # PyVista requires a flat connectivity array with cell sizes
-        cells = []
-        cell_types = []
-        for i, conn in enumerate(self.cell_connectivity):
-            cell_type_id = self.cell_type_ids[i]
-            cell_info = self.cell_type_map[cell_type_id]
-            cell_name = cell_info["name"].lower()  # e.g., 'tetra', 'hexahedron'
-
-            if cell_name in pv_cell_type_map:
-                cells.append(len(conn))  # Number of nodes in the cell
-                cells.extend(conn)  # Node indices
-                cell_types.append(pv_cell_type_map[cell_name])
-            else:
-                print(
-                    f"Warning: Cell type '{cell_name}' not directly supported by PyVista for plotting. Skipping."
-                )
-                # Fallback: plot as points or edges if type is unknown
-                # For now, just skip.
-
-        if not cells:
-            print("No supported cells to plot in 3D.")
-            return
-
-        grid = pv.UnstructuredGrid(
-            np.array(cells), np.array(cell_types), self.node_coords
-        )
-
-        plotter = pv.Plotter(window_size=[1024, 768])
-        plotter.add_mesh(grid, show_edges=True, color="lightblue", opacity=0.8)
-
-        if plot_labels:
-            # Plot cell centroids
-            plotter.add_points(
-                self.cell_centroids,
-                color="red",
-                render_points_as_spheres=True,
-                point_size=10,
-                label="Centroids",
-            )
-            for i, centroid in enumerate(self.cell_centroids):
-                plotter.add_text(f"C{i}", position=centroid, color="red", font_size=8)
-
-        if plot_element_tags:
-            for i, centroid in enumerate(self.cell_centroids):
-                cell_type_id = self.cell_type_ids[i]
-                plotter.add_text(
-                    f"Tag:{cell_type_id}",
-                    position=centroid + [0, 0, 0.05],
-                    color="purple",
-                    font_size=7,
-                )
-
-        if plot_areas:
-            for i, centroid in enumerate(self.cell_centroids):
-                area = self.cell_volumes[i]  # For 3D, volume is volume
-                plotter.add_text(
-                    f"Vol:{area:.2f}",
-                    position=centroid + [0, 0, -0.05],
-                    color="green",
-                    font_size=7,
-                )
-
-        if plot_normals and self._is_analyzed:
-            # Plot face normals
+            # Non-Orthogonality (2D)
+            # Angle between cell centroid vector and face normal
             for ci in range(self.num_cells):
-                for fi in range(len(self.cell_faces[ci])):
-                    face_midpoint = self.face_midpoints[ci, fi]
-                    face_normal = self.face_normals[ci, fi]
-                    face_area = self.face_areas[ci, fi]
+                cell_centroid = self.cell_centroids[ci]
+                max_non_orthogonality = 0.0
+                for fi, face_nodes in enumerate(self.cell_faces[ci]):
+                    if fi < len(self.face_midpoints[ci]) and fi < len(
+                        self.face_normals[ci]
+                    ):
+                        face_midpoint = self.face_midpoints[ci, fi]
+                        face_normal = self.face_normals[ci, fi]
 
-                    # Scale normal for visibility
-                    # Adjust scale based on mesh size
-                    mesh_bounds = grid.bounds
-                    max_dim = max(
-                        mesh_bounds[1] - mesh_bounds[0],
-                        mesh_bounds[3] - mesh_bounds[2],
-                        mesh_bounds[5] - mesh_bounds[4],
-                    )
-                    normal_scale = 0.05 * max_dim
+                        # Vector from cell centroid to face midpoint
+                        centroid_to_face_vec = face_midpoint - cell_centroid
+                        norm_centroid_to_face_vec = np.linalg.norm(centroid_to_face_vec)
+                        norm_face_normal = np.linalg.norm(face_normal)
 
-                    plotter.add_mesh(
-                        pv.Arrow(face_midpoint, face_normal * normal_scale),
-                        color="orange",
-                    )
-                    if (
-                        plot_labels
-                    ):  # Only label normals if labels are generally enabled
-                        plotter.add_text(
-                            f"N{fi}",
-                            position=face_midpoint + face_normal * normal_scale * 1.1,
-                            color="orange",
-                            font_size=6,
-                        )
-                        plotter.add_text(
-                            f"A:{face_area:.2f}",
-                            position=face_midpoint + face_normal * normal_scale * 1.2,
-                            color="brown",
-                            font_size=6,
-                        )
+                        if norm_centroid_to_face_vec > 0 and norm_face_normal > 0:
+                            dot_product = np.dot(centroid_to_face_vec, face_normal)
+                            # Clip to avoid floating point errors causing arccos of > 1 or < -1
+                            angle_rad = np.arccos(
+                                np.clip(
+                                    dot_product
+                                    / (norm_centroid_to_face_vec * norm_face_normal),
+                                    -1.0,
+                                    1.0,
+                                )
+                            )
+                            angle_deg = np.degrees(angle_rad)
+                            # Non-orthogonality is deviation from 0 degrees
+                            non_orthogonality = np.abs(angle_deg - 0.0)
+                            if non_orthogonality > max_non_orthogonality:
+                                max_non_orthogonality = non_orthogonality
+                self.cell_non_orthogonality_values[ci] = max_non_orthogonality
 
-        plotter.add_axes()
-        plotter.show_grid()
-        if show_plot:
-            plotter.show()
+        # 3. Connectivity Check
+        # Check for unreferenced nodes (nodes not part of any cell)
+        referenced_nodes = set()
+        for conn in self.cell_connectivity:
+            for node_idx in conn:
+                referenced_nodes.add(node_idx)
+        if len(referenced_nodes) != self.num_nodes:
+            unreferenced_node_count = self.num_nodes - len(referenced_nodes)
+            self.connectivity_issues.append(
+                f"Found {unreferenced_node_count} unreferenced nodes."
+            )
+
+        # Check for duplicate cells (cells with identical connectivity)
+        unique_cells = set()
+        for i, conn in enumerate(self.cell_connectivity):
+            sorted_conn = tuple(sorted(conn))  # Sort to handle permutations
+            if sorted_conn in unique_cells:
+                self.connectivity_issues.append(
+                    f"Found duplicate cell at index {i} (connectivity: {conn})."
+                )
+            else:
+                unique_cells.add(sorted_conn)
+
+        # Check for non-manifold edges/faces (more than 2 cells sharing an edge/face)
+        # This is partially covered by cell_neighbors, where a face should have 1 or 2 neighbors.
+        # If a face_map entry has more than 2 elements, it's non-manifold.
+        face_map: Dict[Tuple[int, ...], List[int]] = {}
+        for ci, faces in enumerate(self.cell_faces):
+            for face in faces:
+                key = tuple(sorted(face))  # Use sorted tuple of node indices as key
+                face_map.setdefault(key, []).append(ci)
+
+        for face_key, cells_sharing_face in face_map.items():
+            if len(cells_sharing_face) > 2:
+                self.connectivity_issues.append(
+                    f"Non-manifold face/edge detected (shared by {len(cells_sharing_face)} cells): {face_key}."
+                )
 
 
 if __name__ == "__main__":
