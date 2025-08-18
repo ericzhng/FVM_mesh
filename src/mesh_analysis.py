@@ -508,48 +508,83 @@ class Mesh:
                 )
 
     def print_summary(self) -> None:
-        """Prints a summary of the mesh and its quality metrics."""
+        """Prints a nicely formatted summary of the mesh and its quality metrics."""
         if not self._is_analyzed:
             print("Mesh has not been analyzed. Please run analyze_mesh() first.")
             return
 
-        print("\n--- Mesh Summary ---")
-        print(f"Dimension: {self.dimension}D")
-        print(f"Number of nodes: {self.num_nodes}")
-        print(f"Number of cells: {self.num_cells}")
+        print("\n" + "=" * 80)
+        print(f"{'Mesh Analysis Report':^80}")
+        print("=" * 80)
 
+        # --- General Information ---
+        print(f"\n{'--- General Information ---':^80}\n")
+        print(f"  {'Dimension:' :<25} {self.dimension}D")
+        print(f"  {'Number of Nodes:' :<25} {self.num_nodes}")
+        print(f"  {'Number of Cells:' :<25} {self.num_cells}")
+
+        if self.cell_type_map:
+            print(f"  {'Cell Types:' :<25}")
+            for type_id, props in self.cell_type_map.items():
+                count = np.sum(self.cell_type_ids == type_id)
+                print(f"    - {props['name']:<21} {count} cells")
+
+        # --- Cell Geometry ---
         if self.cell_volumes.size > 0:
+            print(f"\n{'--- Cell Geometry ---':^80}\n")
+            print(f"  {'Metric':<20} {'Min':>15} {'Max':>15} {'Average':>15}")
+            print(f"  {'-'*19} {'-'*15} {'-'*15} {'-'*15}")
+            vol_min = np.min(self.cell_volumes)
+            vol_max = np.max(self.cell_volumes)
+            vol_avg = np.mean(self.cell_volumes)
             print(
-                f"Cell volume: min={np.min(self.cell_volumes):.4e}, max={np.max(self.cell_volumes):.4e}, avg={np.mean(self.cell_volumes):.4e}"
+                f"  {'Cell Volume':<20} {vol_min:>15.4e} {vol_max:>15.4e} {vol_avg:>15.4e}"
             )
 
-        print("\n--- Mesh Quality ---")
+        # --- Mesh Quality Metrics ---
+        print(f"\n{'--- Mesh Quality Metrics ---':^80}\n")
+        print(f"  {'Metric':<25} {'Min':>15} {'Max':>15} {'Average':>15}")
+        print(f"  {'-'*24} {'-'*15} {'-'*15} {'-'*15}")
+
         if hasattr(self, "min_max_volume_ratio") and self.min_max_volume_ratio > 0:
-            print(f"Min/Max volume ratio: {self.min_max_volume_ratio:.4f}")
+            print(
+                f"  {'Min/Max Volume Ratio':<25} {self.min_max_volume_ratio:>15.4f} {'-':>15} {'-':>15}"
+            )
 
         if self.cell_skewness_values.size > 0:
+            skew_min = np.min(self.cell_skewness_values)
+            skew_max = np.max(self.cell_skewness_values)
+            skew_avg = np.mean(self.cell_skewness_values)
             print(
-                f"Skewness: min={np.min(self.cell_skewness_values):.4f}, max={np.max(self.cell_skewness_values):.4f}, avg={np.mean(self.cell_skewness_values):.4f}"
+                f"  {'Skewness':<25} {skew_min:>15.4f} {skew_max:>15.4f} {skew_avg:>15.4f}"
             )
 
         if self.cell_non_orthogonality_values.size > 0:
+            non_ortho_min = np.min(self.cell_non_orthogonality_values)
+            non_ortho_max = np.max(self.cell_non_orthogonality_values)
+            non_ortho_avg = np.mean(self.cell_non_orthogonality_values)
             print(
-                f"Non-orthogonality: min={np.min(self.cell_non_orthogonality_values):.4f}, max={np.max(self.cell_non_orthogonality_values):.4f}, avg={np.mean(self.cell_non_orthogonality_values):.4f}"
+                f"  {'Non-Orthogonality (deg)':<25} {non_ortho_min:>15.4f} {non_ortho_max:>15.4f} {non_ortho_avg:>15.4f}"
             )
 
         if self.cell_aspect_ratio_values.size > 0:
+            ar_min = np.min(self.cell_aspect_ratio_values)
+            ar_max = np.max(self.cell_aspect_ratio_values)
+            ar_avg = np.mean(self.cell_aspect_ratio_values)
             print(
-                f"Aspect ratio: min={np.min(self.cell_aspect_ratio_values):.4f}, max={np.max(self.cell_aspect_ratio_values):.4f}, avg={np.mean(self.cell_aspect_ratio_values):.4f}"
+                f"  {'Aspect Ratio':<25} {ar_min:>15.4f} {ar_max:>15.4f} {ar_avg:>15.4f}"
             )
 
+        # --- Connectivity Check ---
+        print(f"\n{'--- Connectivity Check ---':^80}\n")
         if self.connectivity_issues:
-            print("\n--- Connectivity Issues ---")
+            print("  Issues Found:")
             for issue in self.connectivity_issues:
-                print(f"- {issue}")
+                print(f"    - {issue}")
         else:
-            print("No connectivity issues found.")
+            print("  No connectivity issues found.")
 
-        print("\n--------------------")
+        print("\n" + "=" * 80)
 
 
 if __name__ == "__main__":
