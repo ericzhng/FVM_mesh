@@ -507,6 +507,50 @@ class Mesh:
                     f"Non-manifold face/edge detected (shared by {len(cells_sharing_face)} cells): {face_key}."
                 )
 
+    def print_summary(self) -> None:
+        """Prints a summary of the mesh and its quality metrics."""
+        if not self._is_analyzed:
+            print("Mesh has not been analyzed. Please run analyze_mesh() first.")
+            return
+
+        print("\n--- Mesh Summary ---")
+        print(f"Dimension: {self.dimension}D")
+        print(f"Number of nodes: {self.num_nodes}")
+        print(f"Number of cells: {self.num_cells}")
+
+        if self.cell_volumes.size > 0:
+            print(
+                f"Cell volume: min={np.min(self.cell_volumes):.4e}, max={np.max(self.cell_volumes):.4e}, avg={np.mean(self.cell_volumes):.4e}"
+            )
+
+        print("\n--- Mesh Quality ---")
+        if hasattr(self, "min_max_volume_ratio") and self.min_max_volume_ratio > 0:
+            print(f"Min/Max volume ratio: {self.min_max_volume_ratio:.4f}")
+
+        if self.cell_skewness_values.size > 0:
+            print(
+                f"Skewness: min={np.min(self.cell_skewness_values):.4f}, max={np.max(self.cell_skewness_values):.4f}, avg={np.mean(self.cell_skewness_values):.4f}"
+            )
+
+        if self.cell_non_orthogonality_values.size > 0:
+            print(
+                f"Non-orthogonality: min={np.min(self.cell_non_orthogonality_values):.4f}, max={np.max(self.cell_non_orthogonality_values):.4f}, avg={np.mean(self.cell_non_orthogonality_values):.4f}"
+            )
+
+        if self.cell_aspect_ratio_values.size > 0:
+            print(
+                f"Aspect ratio: min={np.min(self.cell_aspect_ratio_values):.4f}, max={np.max(self.cell_aspect_ratio_values):.4f}, avg={np.mean(self.cell_aspect_ratio_values):.4f}"
+            )
+
+        if self.connectivity_issues:
+            print("\n--- Connectivity Issues ---")
+            for issue in self.connectivity_issues:
+                print(f"- {issue}")
+        else:
+            print("No connectivity issues found.")
+
+        print("\n--------------------")
+
 
 if __name__ == "__main__":
     print("mesh.py module. Import classes and use in your script.")

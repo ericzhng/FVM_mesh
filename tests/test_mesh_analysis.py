@@ -55,6 +55,7 @@ class TestMeshAnalysis(unittest.TestCase):
         mesh.analyze_mesh()
         self.assertTrue(mesh._is_analyzed)  # Should be True after analysis
         mesh.compute_quality()
+        mesh.print_summary()
 
 
 if __name__ == "__main__":
