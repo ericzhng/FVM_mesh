@@ -2,12 +2,6 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 
 import gmsh
-import matplotlib.pyplot as plt  # New import for 2D plotting
-from matplotlib.patches import Polygon  # New import for Polygon
-from matplotlib.collections import (
-    PolyCollection,
-)  # New import for efficient 2D plotting
-import pyvista as pv  # New import for 3D plotting
 
 
 class Mesh:
