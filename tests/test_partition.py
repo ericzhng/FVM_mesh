@@ -59,6 +59,7 @@ class TestPartitionMesh(unittest.TestCase):
         parts = partition_mesh(mesh, n_parts, method="metis")
         self.assertEqual(parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(parts)), n_parts)
+        mesh.plot(file_name="test_partition.png", parts=parts)
 
     def test_hierarchical_partitioning(self):
         """Test hierarchical partitioning."""
@@ -67,6 +68,7 @@ class TestPartitionMesh(unittest.TestCase):
         parts = partition_mesh(mesh, n_parts, method="hierarchical")
         self.assertEqual(parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(parts)), n_parts)
+        mesh.plot(file_name="test_partition.png", parts=parts)
 
 
 if __name__ == "__main__":

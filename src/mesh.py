@@ -1,10 +1,11 @@
 import os
 import numpy as np
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any
 
 import gmsh
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 from matplotlib.collections import PatchCollection
 
 
@@ -592,8 +593,14 @@ class Mesh:
 
         print("\n" + "=" * 80)
 
-    def plot(self, file_name: str = "mesh_plot.png"):
-        """Plots the generated mesh with cell and node labels."""
+    def plot(
+        self, file_name: str = "mesh_plot.png", parts: Optional[np.ndarray] = None
+    ):
+        """
+        Plots the generated mesh with cell and node labels.
+        If 'parts' is provided, cells are colored by partition. Otherwise, they are
+        colored by cell type.
+        """
         if self.dimension != 2:
             print("Plotting is currently supported only for 2D meshes.")
             return
@@ -605,42 +612,56 @@ class Mesh:
         y = self.node_coords[:, 1]
 
         # Determine dynamic font size
-        # Base font size, adjust as needed
         base_font_size_cell = 14
         base_font_size_node = 12
-
-        # Scaling factor based on number of cells/nodes
-        # Using a logarithmic scale to prevent extreme sizes
-        # Add 1 to avoid log(0) if num_cells or num_nodes is 0
         cell_font_scale = (
             max(0.5, 1 - np.log10(self.num_cells + 1) / 3) if self.num_cells > 0 else 1
         )
         node_font_scale = (
             max(0.5, 1 - np.log10(self.num_nodes + 1) / 3) if self.num_nodes > 0 else 1
         )
-
         cell_fontsize = base_font_size_cell * cell_font_scale
         node_fontsize = base_font_size_node * node_font_scale
 
         patches = []
-        for i, cell_conn in enumerate(self.cell_connectivity):
-            color = "#FFD700"  # Gold for default/unspecified
-            if len(cell_conn) == 3:
-                color = "#87CEEB"  # SkyBlue for triangles
-            elif len(cell_conn) == 4:
-                color = "#90EE90"  # LightGreen for quadrilaterals
+        colors = None
+        num_parts = 0
+        if parts is not None:
+            # Generate a color map for the partitions
+            unique_parts = np.unique(parts)
+            num_parts = len(unique_parts)
+            try:
+                colors = plt.cm.get_cmap("viridis", num_parts)
+            except (ValueError, TypeError):
+                # Fallback to a default colormap if 'viridis' with num_parts is invalid
+                colors = plt.cm.get_cmap("viridis")
 
-            # Get node coordinates for the current cell
+        for i, cell_conn in enumerate(self.cell_connectivity):
+            if parts is not None and colors is not None:
+                part_id = parts[i]
+                # Normalize part_id to be in [0, 1] for the colormap
+                normalized_part_id = (
+                    (part_id - unique_parts.min())
+                    / (unique_parts.max() - unique_parts.min())
+                    if num_parts > 1
+                    else 0.5
+                )
+                color = colors(normalized_part_id)
+            else:
+                # Default coloring by cell type
+                color = "#FFD700"  # Gold for default/unspecified
+                if len(cell_conn) == 3:
+                    color = "#87CEEB"  # SkyBlue for triangles
+                elif len(cell_conn) == 4:
+                    color = "#90EE90"  # LightGreen for quadrilaterals
+
             all_points = np.array([[x[k], y[k]] for k in cell_conn])
-            polygon = Polygon(
-                all_points, facecolor=color, edgecolor="k", alpha=0.6
-            )  # Added alpha for better visibility of labels
+            polygon = Polygon(all_points, facecolor=color, edgecolor="k", alpha=0.6)
             patches.append(polygon)
 
             # Add cell labels
-            # Calculate centroid of the cell for label placement
-            cell_centroid_x = float(np.mean([x[k] for k in cell_conn]))  # Cast to float
-            cell_centroid_y = float(np.mean([y[k] for k in cell_conn]))  # Cast to float
+            cell_centroid_x = float(np.mean([x[k] for k in cell_conn]))
+            cell_centroid_y = float(np.mean([y[k] for k in cell_conn]))
             ax.text(
                 cell_centroid_x,
                 cell_centroid_y,
@@ -648,53 +669,79 @@ class Mesh:
                 color="black",
                 ha="center",
                 va="center",
-                fontsize=cell_fontsize,  # Dynamic font size
+                fontsize=cell_fontsize,
                 weight="bold",
                 bbox=dict(
                     facecolor="white",
                     alpha=0.7,
                     edgecolor="none",
                     boxstyle="round,pad=0.2",
-                ),  # Added bbox for better readability
+                ),
             )
 
         # Add node labels
         for i in range(self.num_nodes):
             ax.text(
-                float(x[i]),  # Cast to float
-                float(y[i]),  # Cast to float
+                float(x[i]),
+                float(y[i]),
                 str(i),
-                color="darkred",  # Changed color for better contrast
+                color="darkred",
                 ha="center",
                 va="center",
-                fontsize=node_fontsize,  # Dynamic font size
+                fontsize=node_fontsize,
                 bbox=dict(
                     facecolor="yellow",
                     alpha=0.7,
                     edgecolor="none",
                     boxstyle="round,pad=0.1",
-                ),  # Added bbox
+                ),
             )
 
-        # Add more element types as needed
         p = PatchCollection(patches, match_original=True)
         ax.add_collection(p)
 
-        # Plot enhancements
         ax.set_title("Generated Mesh with Labels", fontsize=14, weight="bold")
         ax.set_xlabel("X-coordinate", fontsize=12)
         ax.set_ylabel("Y-coordinate", fontsize=12)
-        ax.grid(True, linestyle=":", alpha=0.7)  # Enabled grid with light style
-        ax.set_aspect("equal", adjustable="box")  # Use set_aspect for better control
+        ax.grid(True, linestyle=":", alpha=0.7)
+        ax.set_aspect("equal", adjustable="box")
         ax.autoscale_view()
 
-        # Add a border to the plot
         for spine in ax.spines.values():
             spine.set_edgecolor("gray")
             spine.set_linewidth(1.5)
 
-        # Create dummy artists for legend
-        from matplotlib.lines import Line2D
+        legend_handles = []
+        if parts is not None and colors is not None:
+            # Create legend for partitions
+            for i, part_id in enumerate(unique_parts):
+                normalized_part_id = (
+                    (part_id - unique_parts.min())
+                    / (unique_parts.max() - unique_parts.min())
+                    if num_parts > 1
+                    else 0.5
+                )
+                legend_handles.append(
+                    Rectangle(
+                        (0, 0),
+                        1,
+                        1,
+                        color=colors(normalized_part_id),
+                        label=f"Part {part_id}",
+                    )
+                )
+
+        else:
+            # Create legend for cell types
+            legend_handles.append(
+                Rectangle((0, 0), 1, 1, color="#87CEEB", label="Triangle")
+            )
+            legend_handles.append(
+                Rectangle((0, 0), 1, 1, color="#90EE90", label="Quadrilateral")
+            )
+            legend_handles.append(
+                Rectangle((0, 0), 1, 1, color="#FFD700", label="Other")
+            )
 
         cell_label_patch = Line2D(
             [0],
@@ -704,7 +751,7 @@ class Mesh:
             label="Cell Labels",
             markerfacecolor="black",
             markersize=base_font_size_cell * 0.8,
-        )  # Dynamic marker size
+        )
         node_label_patch = Line2D(
             [0],
             [0],
@@ -713,22 +760,22 @@ class Mesh:
             label="Node Labels",
             markerfacecolor="darkred",
             markersize=base_font_size_node * 0.8,
-        )  # Dynamic marker size
+        )
+        legend_handles.extend([cell_label_patch, node_label_patch])
+
         ax.legend(
-            handles=[cell_label_patch, node_label_patch],
+            handles=legend_handles,
             loc="lower center",
-            bbox_to_anchor=(0.5, -0.15),
+            bbox_to_anchor=(0.5, -0.2),
             fontsize=10,
             frameon=True,
             fancybox=True,
             shadow=True,
-            ncol=2,
-        )  # Moved loc to lower center and added bbox_to_anchor
+            ncol=max(2, num_parts if parts is not None else 3),
+        )
 
         plot_file = os.path.join(file_name)
-        plt.savefig(
-            plot_file, dpi=300, bbox_inches="tight"
-        )  # Added bbox_inches to prevent labels from being cut off
+        plt.savefig(plot_file, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Mesh plot saved to: {plot_file}")
 
