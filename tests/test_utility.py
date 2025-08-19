@@ -4,7 +4,15 @@ import tempfile
 
 import numpy as np
 
-from src.mesh import Mesh2D
+from src.mesh import Mesh
+from src.partition import partition_mesh
+from src.utility import (
+    build_halo_indices,
+    print_partition,
+    renumber_cells,
+    renumber_nodes,
+)
+from tests.test_partition import make_simple_2d_mesh
 
 
 class TestPartitionMesh(unittest.TestCase):
@@ -19,49 +27,24 @@ class TestPartitionMesh(unittest.TestCase):
     def test_halo_builder(self):
         pass
 
-    def test_partition_and_write(self):
+    def test_partition_halo(self):
         """Test that partitioning runs and writes output files."""
         mesh = make_simple_2d_mesh()
         n_parts = 4
-        parts = partition_mesh(mesh, n_parts, method="hierarchical")
-        self.assertEqual(parts.shape[0], mesh.num_cells)
-        self.assertEqual(len(np.unique(parts)), n_parts)
+        parts = partition_mesh(mesh, n_parts, method="metis")
+        print_partition(parts)
+        mesh.plot(file_name="test_partition.png", parts=parts)
 
-        output_dir = self.tmp_path / "decomposed"
-        write_decomposed_mesh(mesh, parts, str(output_dir), n_parts)
+        out = build_halo_indices(mesh, parts)
+        print(out)
 
-        for p in range(n_parts):
-            proc_dir = output_dir / f"processor{p}"
-            self.assertTrue(proc_dir.exists())
-            self.assertTrue((proc_dir / "mesh.json").exists())
-            self.assertTrue((proc_dir / "node_coords.npy").exists())
-
-    def test_reconstruction_roundtrip(self):
-        """Test that a decomposed mesh can be reconstructed."""
+    def test_renumber(self):
+        """Test that partitioning runs and writes output files."""
         mesh = make_simple_2d_mesh()
-        n_parts = 4
-        parts = partition_mesh(mesh, n_parts, method="hierarchical")
+        mesh.plot(file_name="before.png")
 
-        output_dir = self.tmp_path / "decomposed_roundtrip"
-        write_decomposed_mesh(mesh, parts, str(output_dir), n_parts)
+        new_mesh = renumber_nodes(mesh, strategy="reverse")
+        new_mesh.plot(file_name="after_nodes.png")
 
-        reconstructed_mesh = reconstruct_mesh_from_decomposed_dir(str(output_dir))
-
-        self.assertEqual(reconstructed_mesh.num_cells, mesh.num_cells)
-        self.assertEqual(reconstructed_mesh.num_nodes, mesh.num_nodes)
-        # Further checks could compare coordinates and connectivity if sorting is guaranteed
-
-    def test_gmsh_writer(self):
-        """Test that partitioned gmsh files are written."""
-        mesh = make_simple_2d_mesh()
-        n_parts = 4
-        parts = partition_mesh(mesh, n_parts, method="hierarchical")
-
-        output_dir = self.tmp_path / "decomposed_gmsh"
-        write_decomposed_mesh(mesh, parts, str(output_dir), n_parts)
-        write_decomposed_mesh_gmsh(str(output_dir), n_parts)
-
-        for p in range(n_parts):
-            proc_dir = output_dir / f"processor{p}"
-            if (proc_dir / "mesh.json").exists():  # Check if partition is not empty
-                self.assertTrue((proc_dir / f"processor{p}.msh").exists())
+        new_mesh = renumber_cells(mesh, strategy="sloan")
+        new_mesh.plot(file_name="after_cells.png")

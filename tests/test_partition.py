@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import numpy as np
 
+from src.utility import print_partition
+
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 
 from src.mesh import Mesh
@@ -57,6 +59,7 @@ class TestPartitionMesh(unittest.TestCase):
         mesh = make_simple_2d_mesh()
         n_parts = 4
         parts = partition_mesh(mesh, n_parts, method="metis")
+        print_partition(parts)
         self.assertEqual(parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(parts)), n_parts)
         mesh.plot(file_name="test_partition.png", parts=parts)
@@ -66,6 +69,7 @@ class TestPartitionMesh(unittest.TestCase):
         mesh = make_simple_2d_mesh()
         n_parts = 4
         parts = partition_mesh(mesh, n_parts, method="hierarchical")
+        print_partition(parts)
         self.assertEqual(parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(parts)), n_parts)
         mesh.plot(file_name="test_partition.png", parts=parts)
