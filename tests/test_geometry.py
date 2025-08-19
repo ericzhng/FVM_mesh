@@ -1,13 +1,13 @@
 import gmsh
 import unittest
 import os
-from src.create_geometry_2d import Geo2D
+from src.geometry import Geometry
 
 
-class TestGeometry2D(unittest.TestCase):
+class TestGeometry(unittest.TestCase):
     def setUp(self):
         self.output_dir = "./trunk"
-        self.geometry = Geo2D(output_dir=self.output_dir)
+        self.geometry = Geometry(output_dir=self.output_dir)
 
     def tearDown(self):
         pass

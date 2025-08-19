@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Any
 import gmsh
 
 
-class Mesh2D:
+class Mesh:
     """Represents a geometric mesh and computes FVM geometric/connectivity data.
 
     Responsibilities:
@@ -579,6 +579,66 @@ class Mesh2D:
             print("  No connectivity issues found.")
 
         print("\n" + "=" * 80)
+
+    def plot(self, mesh_params, file_name="mesh.png"):
+        """Plots the generated mesh."""
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        # Get nodes
+        node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
+        x = node_coords[0::3]
+        y = node_coords[1::3]
+        node_map = {tag: i for i, tag in enumerate(node_tags)}
+
+        patches = []
+        for surface_tag in self.surface_tags:
+            mesh_type = mesh_params.get(surface_tag, {}).get("mesh_type", "triangular")
+
+            elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(
+                2, surface_tag
+            )
+
+            for i, elem_type in enumerate(elem_types):
+                if elem_type == 2:  # Triangles
+                    color = "blue"
+                    if mesh_type in ["structured", "quads"]:
+                        color = "yellow"  # Unexpected triangle
+
+                    num_elem = len(elem_tags[i])
+                    for j in range(num_elem):
+                        node_tags_for_elem = elem_node_tags[i][j * 3 : (j + 1) * 3]
+                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
+                        tri_points = np.array([[x[k], y[k]] for k in node_indices])
+                        polygon = Polygon(tri_points, facecolor=color, edgecolor="k")
+                        patches.append(polygon)
+
+                elif elem_type == 3:  # Quads
+                    color = "red"
+                    if mesh_type == "triangular":
+                        color = "green"  # Unexpected quad
+
+                    num_elem = len(elem_tags[i])
+                    for j in range(num_elem):
+                        node_tags_for_elem = elem_node_tags[i][j * 4 : (j + 1) * 4]
+                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
+                        quad_points = np.array([[x[k], y[k]] for k in node_indices])
+                        polygon = Polygon(quad_points, facecolor=color, edgecolor="k")
+                        patches.append(polygon)
+
+        p = PatchCollection(patches, match_original=True)
+        ax.add_collection(p)
+
+        plt.title("Generated Mesh")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.grid(False)
+        plt.axis("equal")
+        ax.autoscale_view()
+
+        plot_file = os.path.join(self.output_dir, file_name)
+        plt.savefig(plot_file, dpi=300)
+        plt.close()
+        print(f"Mesh plot saved to: {plot_file}")
 
 
 if __name__ == "__main__":

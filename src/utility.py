@@ -1,123 +1,112 @@
 import os
-import json
-from typing import List, Tuple, Optional
-
-os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
-
 import numpy as np
 
-try:
-    import metis  # type: ignore
-except ImportError:
-    metis = None
-
-from src.mesh_analysis import Mesh2D
+from src.mesh import Mesh2D
+from src.partition import PartitionManager
 
 
-def partition_mesh(
-    mesh: Mesh2D,
-    n_parts: int,
-    method: str = "metis",
-    cell_weights: Optional[np.ndarray] = None,
-) -> np.ndarray:
-    """Partition mesh elements into n_parts.
-
-    Args:
-        mesh: The mesh object to partition.
-        n_parts: The number of partitions.
-        method: The partitioning method ('metis', 'hierarchical').
-        cell_weights: Optional weights for each cell.
-
-    Returns:
-        An array of partition indices for each cell.
-    """
-    if n_parts <= 1:
-        return np.zeros(mesh.num_cells, dtype=int)
-
-    if not mesh._is_analyzed:
-        mesh.analyze_mesh()
-
-    adjacency = _get_adjacency(mesh)
-
-    if method == "metis":
-        return _partition_with_metis(adjacency, n_parts, cell_weights)
-    elif method == "hierarchical":
-        return _partition_with_hierarchical(mesh, n_parts, cell_weights)
-    else:
-        raise NotImplementedError(f"Partition method '{method}' not implemented")
+def partition_print_summary(pm: PartitionManager) -> None:
+    if pm.elem_parts is None:
+        print("No partitioning computed yet.")
+        return
+    n_parts = int(np.max(pm.elem_parts) + 1)
+    counts = np.bincount(pm.elem_parts, minlength=n_parts)
+    print("--- Partition summary ---")
+    print(f"Parts: {n_parts}")
+    for p in range(n_parts):
+        print(f" part {p}: cells = {counts[p]}")
+    iface = 0
+    if getattr(pm.mesh, "cell_faces", None) is not None:
+        face_map = {}
+        for ci, faces in enumerate(pm.mesh.cell_faces):
+            for face in faces:
+                key = tuple(sorted(face))
+                face_map.setdefault(key, set()).add(int(pm.elem_parts[ci]))
+        iface = sum(1 for s in face_map.values() if len(s) > 1)
+    print(f"Estimated inter-part interface faces: {iface}")
 
 
-def _get_adjacency(mesh: Mesh2D) -> List[List[int]]:
-    """Computes the adjacency list for the mesh cells."""
-    adjacency: List[List[int]] = []
-    for i in range(mesh.num_cells):
-        neighs = {int(nb) for nb in mesh.cell_neighbors[i] if nb != -1}
-        neighs.discard(i)
-        adjacency.append(sorted(neighs))
-    return adjacency
-
-
-def _partition_with_metis(
-    adjacency: List[List[int]], n_parts: int, cell_weights: Optional[np.ndarray]
-) -> np.ndarray:
-    """Partitions the mesh using METIS."""
-    if metis is None:
-        raise ImportError("metis python binding not available")
-    try:
-        if cell_weights is not None:
-            try:
-                _, parts = metis.part_graph(
-                    adjacency, nparts=n_parts, vwgt=cell_weights.tolist()
-                )
-            except TypeError:
-                _, parts = metis.part_graph(
-                    adjacency, nparts=n_parts, vweights=cell_weights.tolist()
-                )
-        else:
-            _, parts = metis.part_graph(adjacency, nparts=n_parts)
-        return np.array(parts, dtype=int)
-    except Exception as ex:
-        raise RuntimeError(f"METIS partitioning failed: {ex}")
-
-
-def _partition_with_hierarchical(
-    mesh: Mesh, n_parts: int, cell_weights: Optional[np.ndarray]
-) -> np.ndarray:
-    """Partitions the mesh using a hierarchical coordinate bisection method."""
-    centroids = mesh.cell_centroids
-    weights = (
-        cell_weights
-        if cell_weights is not None
-        else np.ones(mesh.num_cells, dtype=float)
+def build_halo_indices_from_decomposed(decomposed_dir: str):
+    proc_dirs = sorted(
+        [d for d in os.listdir(decomposed_dir) if d.startswith("processor")]
     )
-    parts = -np.ones(mesh.num_cells, dtype=int)
+    rank_data = {}
+    for proc in proc_dirs:
+        p = int(proc.replace("processor", ""))
+        proc_path = os.path.join(decomposed_dir, proc)
+        gnode_ids = np.load(os.path.join(proc_path, "global_node_ids.npy"))
+        rank_data[p] = {"global_node_ids": gnode_ids, "proc_path": proc_path}
+    node_to_ranks = {}
+    for rank, info in rank_data.items():
+        for gid in info["global_node_ids"]:
+            node_to_ranks.setdefault(int(gid), []).append(rank)
+    out = {}
+    for rank, info in rank_data.items():
+        gnodes = np.array(info["global_node_ids"], dtype=int)
+        local_to_global = gnodes.copy()
+        global_to_local = {int(g): int(i) for i, g in enumerate(gnodes)}
+        neighbor_ranks = set()
+        for g in gnodes:
+            for r in node_to_ranks.get(int(g), []):
+                if r != rank:
+                    neighbor_ranks.add(r)
+        neighbors = {}
+        for nbr in sorted(neighbor_ranks):
+            overlap = [int(g) for g in gnodes if nbr in node_to_ranks.get(int(g), [])]
+            send_local = [global_to_local[g] for g in overlap]
+            neighbors[nbr] = {
+                "send_local_indices": send_local,
+                "send_global_ids": overlap,
+            }
+        out[rank] = {
+            "local_to_global": local_to_global,
+            "global_to_local": global_to_local,
+            "neighbors": neighbors,
+        }
+    return out
 
-    def recurse(idxs: np.ndarray, part_ids: List[int]):
-        if len(part_ids) == 1:
-            parts[idxs] = part_ids[0]
-            return
-        pts = centroids[idxs]
-        spans = pts.max(axis=0) - pts.min(axis=0)
-        axis = int(np.argmax(spans))
-        order = np.argsort(pts[:, axis])
-        w = weights[idxs][order]
-        cum = np.cumsum(w)
-        total = cum[-1]
-        split = int(np.searchsorted(cum, total / 2.0))
-        if split == 0 or split == len(order):
-            split = len(order) // 2
-        left = idxs[order[:split]]
-        right = idxs[order[split:]]
-        mid = len(part_ids) // 2
-        recurse(left, part_ids[:mid])
-        recurse(right, part_ids[mid:])
 
-    all_idx = np.arange(mesh.num_cells, dtype=int)
-    recurse(all_idx, list(range(n_parts)))
-    return parts
+def renumber_nodes_global(self, strategy: str = "sequential") -> None:
+    """A simple global node renumbering that reorders nodes in mesh.node_coords.
+
+    This is separate from partitioning and may be called independently.
+    Strategies: 'sequential', 'reverse', 'spatial_x', 'random'.
+    """
+    if self.mesh.num_nodes == 0:
+        return
+    if strategy == "sequential":
+        new_order = np.arange(self.mesh.num_nodes, dtype=int)
+    elif strategy == "reverse":
+        new_order = np.arange(self.mesh.num_nodes - 1, -1, -1, dtype=int)
+    elif strategy == "random":
+        new_order = np.random.permutation(self.mesh.num_nodes)
+    elif strategy == "spatial_x":
+        new_order = np.argsort(self.mesh.node_coords[:, 0])
+    else:
+        raise NotImplementedError(f"renumber {strategy}")
+    # apply permutation: new_order gives old indices in new order, so compute remap old->new
+    remap = np.empty_like(new_order)
+    remap[new_order] = np.arange(self.mesh.num_nodes, dtype=int)
+    self.mesh.node_coords = self.mesh.node_coords[new_order]
+    self.mesh.cell_connectivity = [
+        list(remap[np.array(c)]) for c in self.mesh.cell_connectivity
+    ]
+    if (
+        getattr(self.mesh, "boundary_faces_nodes", None) is not None
+        and self.mesh.boundary_faces_nodes.size > 0
+    ):
+        self.mesh.boundary_faces_nodes = remap[self.mesh.boundary_faces_nodes]
+    # clear derived fields
+    self.mesh.cell_faces = []
+    self.mesh.cell_neighbors = np.array([])
+    self.mesh.cell_centroids = np.array([])
+    self.mesh.face_midpoints = np.array([])
+    self.mesh.face_normals = np.array([])
+    self.mesh.face_areas = np.array([])
+    self.mesh.cell_volumes = np.array([])
 
 
-def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh2D:
+def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh:
     """Reconstruct a global mesh from processor*/local_mesh.npz outputs."""
     proc_dirs = sorted(
         [d for d in os.listdir(decomposed_dir) if d.startswith("processor")]
@@ -166,7 +155,7 @@ def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh2D:
 
 
 def write_decomposed_mesh(
-    mesh: Mesh2D, elem_parts: np.ndarray, output_dir: str, n_parts: int
+    mesh: Mesh, elem_parts: np.ndarray, output_dir: str, n_parts: int
 ) -> None:
     """Write per-processor directories with numpy and json outputs."""
     if elem_parts is None or len(elem_parts) != mesh.num_cells:
@@ -206,7 +195,7 @@ def write_decomposed_mesh(
 def _write_partition_files(
     proc_dir: str,
     part_id: int,
-    mesh: Mesh2D,
+    mesh: Mesh,
     local_cell_indices: np.ndarray,
     local_coords: np.ndarray,
     local_conn: List[List[int]],
@@ -237,7 +226,7 @@ def _write_partition_files(
 
 
 def _extract_local_boundary(
-    mesh: Mesh2D, local_cell_indices: np.ndarray, unique_nodes: np.ndarray
+    mesh: Mesh, local_cell_indices: np.ndarray, unique_nodes: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Extracts boundary faces and tags for a local partition."""
     if (

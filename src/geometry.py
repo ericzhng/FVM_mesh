@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 
 
-class Geo2D:
+class Geometry:
     """A class to create and manage 2D geometries using gmsh."""
 
     def __init__(self, output_dir: str = "."):
