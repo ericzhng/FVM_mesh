@@ -2,7 +2,7 @@ import unittest
 import os
 import gmsh
 from src.create_geometry_2d import Geometry2D
-from src.gen_mesh_2d import Mesh2D
+from src.gen_mesh_2d import MeshGen2D
 
 
 class TestMesh2D(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestMesh2D(unittest.TestCase):
         geom = Geometry2D(output_dir=self.output_dir)
         surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.1)
         gmsh.model.occ.synchronize()
-        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesher = MeshGen2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "triangular_mesh.msh"
         plot_filename = "triangular_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "triangular", "char_length": 0.1}}
@@ -39,7 +39,7 @@ class TestMesh2D(unittest.TestCase):
         geom = Geometry2D(output_dir=self.output_dir)
         surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.2)
         gmsh.model.occ.synchronize()
-        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesher = MeshGen2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "structured_mesh.msh"
         plot_filename = "structured_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "structured", "char_length": 0.2}}
@@ -57,7 +57,7 @@ class TestMesh2D(unittest.TestCase):
         geom = Geometry2D(output_dir=self.output_dir)
         surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.1)
         gmsh.model.occ.synchronize()
-        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesher = MeshGen2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "quad_mesh.msh"
         plot_filename = "quad_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "quads"}}
@@ -75,7 +75,7 @@ class TestMesh2D(unittest.TestCase):
         geom = Geometry2D(output_dir=self.output_dir)
         surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.5)
         gmsh.model.occ.synchronize()
-        mesher = Mesh2D(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesher = MeshGen2D(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_params = {surface_tag: {"mesh_type": "invalid_type"}}
         with self.assertRaises(ValueError):
             mesher.generate(mesh_params=mesh_params)
@@ -90,7 +90,7 @@ class TestMesh2D(unittest.TestCase):
         self.assertEqual(len(surfaces), 4)
 
         # 2. We will mesh all four surfaces for this test
-        mesher = Mesh2D(surface_tags=surfaces, output_dir=self.output_dir)
+        mesher = MeshGen2D(surface_tags=surfaces, output_dir=self.output_dir)
 
         # 3. Define mesh parameters for all four surfaces
         mesh_params = {

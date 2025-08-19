@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 
 
-class Geometry2D:
+class Geo2D:
     """A class to create and manage 2D geometries using gmsh."""
 
     def __init__(self, output_dir: str = "."):
@@ -17,21 +17,23 @@ class Geometry2D:
         """Plots the wireframe of the current gmsh model."""
         plt.figure()
 
-        for e in gmsh.model.getEntities(1): # 1D entities (lines)
+        for e in gmsh.model.getEntities(1):  # 1D entities (lines)
             boundary = gmsh.model.getBoundary([e], combined=False)
             points = []
             for p in boundary:
                 coords = gmsh.model.getValue(0, p[1], [])
                 points.append(coords)
-            
+
             if len(points) == 2:
-                plt.plot([points[0][0], points[1][0]], [points[0][1], points[1][1]], 'k-')
+                plt.plot(
+                    [points[0][0], points[1][0]], [points[0][1], points[1][1]], "k-"
+                )
 
         plt.title("Geometry Wireframe")
         plt.xlabel("X")
         plt.ylabel("Y")
         plt.grid(True)
-        plt.axis('equal')
+        plt.axis("equal")
 
         plot_file = os.path.join(self.output_dir, file_name)
         plt.savefig(plot_file)

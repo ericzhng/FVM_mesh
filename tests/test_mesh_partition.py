@@ -1,9 +1,12 @@
+import os
 import unittest
 from pathlib import Path
 import tempfile
 import numpy as np
 
-from src.mesh_analysis import Mesh
+os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+
+from src.mesh_analysis import Mesh2D
 from src.mesh_partition import (
     partition_mesh,
     reconstruct_mesh_from_decomposed_dir,
@@ -11,14 +14,11 @@ from src.mesh_partition import (
     write_decomposed_mesh_gmsh,
     metis,
 )
-import os
-
-os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 
 
 def make_simple_2d_mesh():
     """Creates a simple 2D mesh with 9 quadrilateral cells for testing."""
-    m = Mesh()
+    m = Mesh2D()
     m.dimension = 2
 
     # Create a 4x4 grid of nodes

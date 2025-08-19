@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-from src.mesh_analysis import Mesh
+from src.mesh_analysis import Mesh2D
 from src.mesh_partition import PartitionManager
 
 

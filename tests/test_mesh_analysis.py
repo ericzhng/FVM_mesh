@@ -1,15 +1,9 @@
 import unittest
-from pathlib import Path
 import tempfile
-import os  # Import os for path manipulation
+from pathlib import Path
 
-import numpy as np
-import gmsh  # Import gmsh for creating a test mesh
-
-from src.mesh_analysis import Mesh
-
-# from src.mesh_partition import PartitionManager # Assuming this is where PartitionManager comes from
-# from src.mesh_partition import build_halo_indices_from_decomposed # Assuming this is where build_halo_indices_from_decomposed comes from
+import gmsh
+from src.mesh_analysis import Mesh2D
 
 
 # Helper function to create a simple 2D mesh for testing
@@ -48,7 +42,7 @@ class TestMeshAnalysis(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def test_is_analyzed_flag(self):
-        mesh = Mesh()
+        mesh = Mesh2D()
         self.assertFalse(mesh._is_analyzed)  # Should be False initially
         mesh.read_gmsh(str(self.test_msh_file))
         self.assertFalse(mesh._is_analyzed)  # Should still be False after reading

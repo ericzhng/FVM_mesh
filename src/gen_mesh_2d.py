@@ -6,7 +6,7 @@ from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
 
-class Mesh2D:
+class MeshGen2D:
     """A class to generate 2D meshes using gmsh."""
 
     def __init__(self, surface_tags, output_dir="."):

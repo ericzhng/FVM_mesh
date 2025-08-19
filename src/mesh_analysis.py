@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Any
 import gmsh
 
 
-class Mesh:
+class Mesh2D:
     """Represents a geometric mesh and computes FVM geometric/connectivity data.
 
     Responsibilities:

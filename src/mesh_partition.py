@@ -2,20 +2,20 @@ import os
 import json
 from typing import List, Tuple, Optional
 
-import numpy as np
-
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+
+import numpy as np
 
 try:
     import metis  # type: ignore
 except ImportError:
     metis = None
 
-from src.mesh_analysis import Mesh
+from src.mesh_analysis import Mesh2D
 
 
 def partition_mesh(
-    mesh: Mesh,
+    mesh: Mesh2D,
     n_parts: int,
     method: str = "metis",
     cell_weights: Optional[np.ndarray] = None,
@@ -47,7 +47,7 @@ def partition_mesh(
         raise NotImplementedError(f"Partition method '{method}' not implemented")
 
 
-def _get_adjacency(mesh: Mesh) -> List[List[int]]:
+def _get_adjacency(mesh: Mesh2D) -> List[List[int]]:
     """Computes the adjacency list for the mesh cells."""
     adjacency: List[List[int]] = []
     for i in range(mesh.num_cells):
@@ -117,7 +117,7 @@ def _partition_with_hierarchical(
     return parts
 
 
-def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh:
+def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh2D:
     """Reconstruct a global mesh from processor*/local_mesh.npz outputs."""
     proc_dirs = sorted(
         [d for d in os.listdir(decomposed_dir) if d.startswith("processor")]
@@ -166,7 +166,7 @@ def reconstruct_mesh_from_decomposed_dir(decomposed_dir: str) -> Mesh:
 
 
 def write_decomposed_mesh(
-    mesh: Mesh, elem_parts: np.ndarray, output_dir: str, n_parts: int
+    mesh: Mesh2D, elem_parts: np.ndarray, output_dir: str, n_parts: int
 ) -> None:
     """Write per-processor directories with numpy and json outputs."""
     if elem_parts is None or len(elem_parts) != mesh.num_cells:
@@ -206,7 +206,7 @@ def write_decomposed_mesh(
 def _write_partition_files(
     proc_dir: str,
     part_id: int,
-    mesh: Mesh,
+    mesh: Mesh2D,
     local_cell_indices: np.ndarray,
     local_coords: np.ndarray,
     local_conn: List[List[int]],
@@ -237,7 +237,7 @@ def _write_partition_files(
 
 
 def _extract_local_boundary(
-    mesh: Mesh, local_cell_indices: np.ndarray, unique_nodes: np.ndarray
+    mesh: Mesh2D, local_cell_indices: np.ndarray, unique_nodes: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Extracts boundary faces and tags for a local partition."""
     if (
