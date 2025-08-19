@@ -38,6 +38,7 @@ def make_simple_2d_mesh():
     m.num_cells = len(cell_connectivity)
     m.analyze_mesh()
     m.print_summary()
+    m.plot()
 
     return m
 

@@ -1,7 +1,11 @@
+import os
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
 import gmsh
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
 
 
 class Mesh:
@@ -21,6 +25,7 @@ class Mesh:
         self.dimension: int = 0
         self.num_nodes: int = 0
         self.num_cells: int = 0
+        self.surface_tags: List[int] = []
 
         # geometry/connectivity
         self.node_coords: np.ndarray = np.array([])  # (N,3)
@@ -117,6 +122,13 @@ class Mesh:
 
             # read boundary physical groups
             self._read_gmsh_boundary_groups()
+
+            # Populate surface_tags for plotting 2D elements
+            if self.dimension == 2:
+                # Get all 2D entities (surfaces) in the model
+                entities_2d = gmsh.model.getEntities(2)
+                self.surface_tags = [tag for dim, tag in entities_2d]
+
         finally:
             gmsh.finalize()
 
@@ -580,63 +592,143 @@ class Mesh:
 
         print("\n" + "=" * 80)
 
-    def plot(self, mesh_params, file_name="mesh.png"):
-        """Plots the generated mesh."""
+    def plot(self, file_name: str = "mesh_plot.png"):
+        """Plots the generated mesh with cell and node labels."""
+        if self.dimension != 2:
+            print("Plotting is currently supported only for 2D meshes.")
+            return
+
         fig, ax = plt.subplots(figsize=(10, 8))
 
-        # Get nodes
-        node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-        x = node_coords[0::3]
-        y = node_coords[1::3]
-        node_map = {tag: i for i, tag in enumerate(node_tags)}
+        # Get nodes (already available in self.node_coords)
+        x = self.node_coords[:, 0]
+        y = self.node_coords[:, 1]
+
+        # Determine dynamic font size
+        # Base font size, adjust as needed
+        base_font_size_cell = 14
+        base_font_size_node = 12
+
+        # Scaling factor based on number of cells/nodes
+        # Using a logarithmic scale to prevent extreme sizes
+        # Add 1 to avoid log(0) if num_cells or num_nodes is 0
+        cell_font_scale = (
+            max(0.5, 1 - np.log10(self.num_cells + 1) / 3) if self.num_cells > 0 else 1
+        )
+        node_font_scale = (
+            max(0.5, 1 - np.log10(self.num_nodes + 1) / 3) if self.num_nodes > 0 else 1
+        )
+
+        cell_fontsize = base_font_size_cell * cell_font_scale
+        node_fontsize = base_font_size_node * node_font_scale
 
         patches = []
-        for surface_tag in self.surface_tags:
-            mesh_type = mesh_params.get(surface_tag, {}).get("mesh_type", "triangular")
+        for i, cell_conn in enumerate(self.cell_connectivity):
+            color = "#FFD700"  # Gold for default/unspecified
+            if len(cell_conn) == 3:
+                color = "#87CEEB"  # SkyBlue for triangles
+            elif len(cell_conn) == 4:
+                color = "#90EE90"  # LightGreen for quadrilaterals
 
-            elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(
-                2, surface_tag
+            # Get node coordinates for the current cell
+            all_points = np.array([[x[k], y[k]] for k in cell_conn])
+            polygon = Polygon(
+                all_points, facecolor=color, edgecolor="k", alpha=0.6
+            )  # Added alpha for better visibility of labels
+            patches.append(polygon)
+
+            # Add cell labels
+            # Calculate centroid of the cell for label placement
+            cell_centroid_x = float(np.mean([x[k] for k in cell_conn]))  # Cast to float
+            cell_centroid_y = float(np.mean([y[k] for k in cell_conn]))  # Cast to float
+            ax.text(
+                cell_centroid_x,
+                cell_centroid_y,
+                str(i),
+                color="black",
+                ha="center",
+                va="center",
+                fontsize=cell_fontsize,  # Dynamic font size
+                weight="bold",
+                bbox=dict(
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                    boxstyle="round,pad=0.2",
+                ),  # Added bbox for better readability
             )
 
-            for i, elem_type in enumerate(elem_types):
-                if elem_type == 2:  # Triangles
-                    color = "blue"
-                    if mesh_type in ["structured", "quads"]:
-                        color = "yellow"  # Unexpected triangle
+        # Add node labels
+        for i in range(self.num_nodes):
+            ax.text(
+                float(x[i]),  # Cast to float
+                float(y[i]),  # Cast to float
+                str(i),
+                color="darkred",  # Changed color for better contrast
+                ha="center",
+                va="center",
+                fontsize=node_fontsize,  # Dynamic font size
+                bbox=dict(
+                    facecolor="yellow",
+                    alpha=0.7,
+                    edgecolor="none",
+                    boxstyle="round,pad=0.1",
+                ),  # Added bbox
+            )
 
-                    num_elem = len(elem_tags[i])
-                    for j in range(num_elem):
-                        node_tags_for_elem = elem_node_tags[i][j * 3 : (j + 1) * 3]
-                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
-                        tri_points = np.array([[x[k], y[k]] for k in node_indices])
-                        polygon = Polygon(tri_points, facecolor=color, edgecolor="k")
-                        patches.append(polygon)
-
-                elif elem_type == 3:  # Quads
-                    color = "red"
-                    if mesh_type == "triangular":
-                        color = "green"  # Unexpected quad
-
-                    num_elem = len(elem_tags[i])
-                    for j in range(num_elem):
-                        node_tags_for_elem = elem_node_tags[i][j * 4 : (j + 1) * 4]
-                        node_indices = [node_map[tag] for tag in node_tags_for_elem]
-                        quad_points = np.array([[x[k], y[k]] for k in node_indices])
-                        polygon = Polygon(quad_points, facecolor=color, edgecolor="k")
-                        patches.append(polygon)
-
+        # Add more element types as needed
         p = PatchCollection(patches, match_original=True)
         ax.add_collection(p)
 
-        plt.title("Generated Mesh")
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.grid(False)
-        plt.axis("equal")
+        # Plot enhancements
+        ax.set_title("Generated Mesh with Labels", fontsize=14, weight="bold")
+        ax.set_xlabel("X-coordinate", fontsize=12)
+        ax.set_ylabel("Y-coordinate", fontsize=12)
+        ax.grid(True, linestyle=":", alpha=0.7)  # Enabled grid with light style
+        ax.set_aspect("equal", adjustable="box")  # Use set_aspect for better control
         ax.autoscale_view()
 
-        plot_file = os.path.join(self.output_dir, file_name)
-        plt.savefig(plot_file, dpi=300)
+        # Add a border to the plot
+        for spine in ax.spines.values():
+            spine.set_edgecolor("gray")
+            spine.set_linewidth(1.5)
+
+        # Create dummy artists for legend
+        from matplotlib.lines import Line2D
+
+        cell_label_patch = Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Cell Labels",
+            markerfacecolor="black",
+            markersize=base_font_size_cell * 0.8,
+        )  # Dynamic marker size
+        node_label_patch = Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Node Labels",
+            markerfacecolor="darkred",
+            markersize=base_font_size_node * 0.8,
+        )  # Dynamic marker size
+        ax.legend(
+            handles=[cell_label_patch, node_label_patch],
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.15),
+            fontsize=10,
+            frameon=True,
+            fancybox=True,
+            shadow=True,
+            ncol=2,
+        )  # Moved loc to lower center and added bbox_to_anchor
+
+        plot_file = os.path.join(file_name)
+        plt.savefig(
+            plot_file, dpi=300, bbox_inches="tight"
+        )  # Added bbox_inches to prevent labels from being cut off
         plt.close()
         print(f"Mesh plot saved to: {plot_file}")
 
