@@ -1,11 +1,9 @@
 import os
-import json
-from typing import List, Tuple, Optional
-
-os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+from typing import List, Optional
 
 import numpy as np
 
+os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 try:
     import metis  # type: ignore
 except ImportError:

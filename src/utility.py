@@ -1,13 +1,10 @@
-import json
-import os
-from typing import List, Tuple
-import numpy as np
 import copy
+
+import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import reverse_cuthill_mckee
 
 from src.mesh import Mesh
-from src.partition import partition_mesh
 
 
 def print_partition(parts):
@@ -189,8 +186,10 @@ def _spectral_ordering(adj_matrix: csr_matrix) -> np.ndarray:
 
 def _sloan_ordering(adj_matrix: csr_matrix) -> np.ndarray:
     """Computes cell ordering using the Sloan algorithm."""
+
     if adj_matrix is None:
         raise ValueError("Input adjacency matrix cannot be None.")
+
     from scipy.sparse.csgraph import dijkstra
 
     n = adj_matrix.shape[0]
@@ -256,8 +255,10 @@ def _sloan_ordering(adj_matrix: csr_matrix) -> np.ndarray:
 
 def _gps_ordering(adj_matrix: csr_matrix) -> np.ndarray:
     """Computes cell ordering using the Gibbs-Poole-Stockmeyer algorithm."""
+
     if adj_matrix is None:
         raise ValueError("Input adjacency matrix cannot be None.")
+
     from scipy.sparse.csgraph import breadth_first_order, reverse_cuthill_mckee
 
     n = adj_matrix.shape[0]

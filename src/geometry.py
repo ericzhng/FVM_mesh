@@ -1,7 +1,8 @@
 import os
+from typing import List, Tuple
+
 import gmsh
 import numpy as np
-from typing import List, Tuple
 import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 

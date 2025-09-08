@@ -1,8 +1,8 @@
 import os
-import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 
 import gmsh
+import numpy as np
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
