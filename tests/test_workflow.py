@@ -49,7 +49,7 @@ class TestWorkflow(unittest.TestCase):
 
         # 3. Partition the mesh
         n_parts = 3
-        result = partition_mesh(mesh, n_parts, method="hierarchical")
+        result = partition_mesh(mesh, n_parts, method="metis")
         result.print_summary()
 
         self.assertEqual(result.n_parts, n_parts)

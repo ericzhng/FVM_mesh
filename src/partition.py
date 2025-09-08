@@ -2,6 +2,7 @@ import os
 from typing import Dict, List, Optional, Set
 
 import numpy as np
+import warnings
 
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 try:
@@ -173,60 +174,51 @@ def _partition_with_metis(
 def _partition_with_hierarchical(
     mesh: Mesh, n_parts: int, cell_weights: Optional[np.ndarray]
 ) -> np.ndarray:
-    """Partitions the mesh using a hierarchical coordinate bisection method."""
+    """Partitions the mesh using a sequential coordinate bisection method."""
+    # Check if n_parts is a power of two
+    is_power_of_two = (n_parts > 0) and (n_parts & (n_parts - 1) == 0)
+    if not is_power_of_two:
+        warnings.warn(
+            f"The 'hierarchical' partitioning method works best with a number of partitions "
+            f"that is a power of two. You provided n_parts={n_parts}, which may result in "
+            f"unevenly sized partitions."
+        )
+
     centroids = mesh.cell_centroids
     weights = (
         cell_weights
         if cell_weights is not None
         else np.ones(mesh.num_cells, dtype=float)
     )
-    parts = -np.ones(mesh.num_cells, dtype=int)
+    parts = np.zeros(mesh.num_cells, dtype=int)
 
-    def recurse(idxs: np.ndarray, part_ids: List[int]):
-        if len(part_ids) == 1:
-            if idxs.size > 0:
-                parts[idxs] = part_ids[0]
-            return
+    for i in range(1, n_parts):
+        part_counts = np.bincount(parts)
+        p_to_split = np.argmax(part_counts)
 
-        if idxs.size == 0:
-            return
+        idxs_to_split = np.where(parts == p_to_split)[0]
 
-        pts = centroids[idxs]
+        if not idxs_to_split.any():
+            continue
+
+        pts = centroids[idxs_to_split]
         spans = pts.max(axis=0) - pts.min(axis=0)
         axis = int(np.argmax(spans))
         order = np.argsort(pts[:, axis])
 
-        w = weights[idxs][order]
+        w = weights[idxs_to_split][order]
         cum = np.cumsum(w)
         total = cum[-1]
 
-        split = int(np.searchsorted(cum, total / 2.0))
+        if total == 0:
+            split = len(order) // 2
+        else:
+            split = int(np.searchsorted(cum, total / 2.0))
 
         if split == 0 or split == len(order):
             split = len(order) // 2
 
-        left = idxs[order[:split]]
-        right = idxs[order[split:]]
-
-        current_n_parts = len(part_ids)
-        if idxs.size > 0:
-            ratio = len(left) / idxs.size
-            mid = int(np.round(current_n_parts * ratio))
-        else:
-            mid = current_n_parts // 2
-
-        if mid == 0 and current_n_parts > 1 and len(left) > 0:
-            mid = 1
-        if mid == current_n_parts and current_n_parts > 1 and len(right) > 0:
-            mid = current_n_parts - 1
-
-        recurse(left, part_ids[:mid])
-        recurse(right, part_ids[mid:])
-
-    all_idx = np.arange(mesh.num_cells, dtype=int)
-    recurse(all_idx, list(range(n_parts)))
-
-    if np.any(parts == -1):
-        parts[parts == -1] = 0
+        right_indices = idxs_to_split[order[split:]]
+        parts[right_indices] = i
 
     return parts
