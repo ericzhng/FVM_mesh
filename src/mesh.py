@@ -330,7 +330,7 @@ class Mesh:
             # Unknown geometric type: set zero volumes
             self.cell_volumes = np.zeros(self.num_cells)
 
-    def compute_quality(self) -> None:
+    def _compute_quality(self) -> None:
         """Computes mesh quality metrics and stores them as attributes."""
         if not self._is_analyzed:
             raise RuntimeError("Mesh must be analyzed before computing quality.")
@@ -549,6 +549,8 @@ class Mesh:
             )
 
         # --- Mesh Quality Metrics ---
+        self._compute_quality()
+
         print(f"\n{'--- Mesh Quality Metrics ---':^80}\n")
         print(f"  {'Metric':<25} {'Min':>15} {'Max':>15} {'Average':>15}")
         print(f"  {'-'*24} {'-'*15} {'-'*15} {'-'*15}")

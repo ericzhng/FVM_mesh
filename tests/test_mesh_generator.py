@@ -24,7 +24,7 @@ class TestMesh2D(unittest.TestCase):
         mesher = MeshGenerator(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "triangular_mesh.msh"
         plot_filename = "triangular_mesh.png"
-        mesh_params = {surface_tag: {"mesh_type": "triangular", "char_length": 0.1}}
+        mesh_params = {surface_tag: {"mesh_type": "tri", "char_length": 0.1}}
         mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
 
         # Check if the mesh and plot files are created
@@ -96,7 +96,7 @@ class TestMesh2D(unittest.TestCase):
         mesh_params = {
             surfaces[0]: {"mesh_type": "structured", "char_length": 0.2},
             surfaces[1]: {"mesh_type": "quads"},
-            surfaces[2]: {"mesh_type": "triangular"},
+            surfaces[2]: {"mesh_type": "tri"},
             surfaces[3]: {"mesh_type": "quads"},
         }
 

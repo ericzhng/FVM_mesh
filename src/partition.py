@@ -184,7 +184,11 @@ def _partition_with_hierarchical(
 
     def recurse(idxs: np.ndarray, part_ids: List[int]):
         if len(part_ids) == 1:
-            parts[idxs] = part_ids[0]
+            if idxs.size > 0:
+                parts[idxs] = part_ids[0]
+            return
+
+        if idxs.size == 0:
             return
 
         pts = centroids[idxs]
@@ -195,6 +199,7 @@ def _partition_with_hierarchical(
         w = weights[idxs][order]
         cum = np.cumsum(w)
         total = cum[-1]
+
         split = int(np.searchsorted(cum, total / 2.0))
 
         if split == 0 or split == len(order):
@@ -203,10 +208,25 @@ def _partition_with_hierarchical(
         left = idxs[order[:split]]
         right = idxs[order[split:]]
 
-        mid = len(part_ids) // 2
+        current_n_parts = len(part_ids)
+        if idxs.size > 0:
+            ratio = len(left) / idxs.size
+            mid = int(np.round(current_n_parts * ratio))
+        else:
+            mid = current_n_parts // 2
+
+        if mid == 0 and current_n_parts > 1 and len(left) > 0:
+            mid = 1
+        if mid == current_n_parts and current_n_parts > 1 and len(right) > 0:
+            mid = current_n_parts - 1
+
         recurse(left, part_ids[:mid])
         recurse(right, part_ids[mid:])
 
     all_idx = np.arange(mesh.num_cells, dtype=int)
     recurse(all_idx, list(range(n_parts)))
+
+    if np.any(parts == -1):
+        parts[parts == -1] = 0
+
     return parts

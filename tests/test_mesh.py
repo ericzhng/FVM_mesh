@@ -23,7 +23,7 @@ class TestMeshAnalysis(unittest.TestCase):
         self.assertFalse(mesh._is_analyzed)  # Should still be False after reading
         mesh.analyze_mesh()
         self.assertTrue(mesh._is_analyzed)  # Should be True after analysis
-        mesh.compute_quality()
+        mesh._compute_quality()
         mesh.print_summary()
         mesh.plot()
 
