@@ -43,12 +43,10 @@ class MeshGenerator:
                 continue
 
             params = mesh_params[surface_tag]
-            mesh_type = params.get("mesh_type", "triangular")
+            mesh_type = params.get("mesh_type", "tri")
 
-            if mesh_type not in ["structured", "triangular", "quads"]:
-                raise ValueError(
-                    "mesh_type must be 'structured', 'triangular', or 'quads'"
-                )
+            if mesh_type not in ["structured", "tri", "quads"]:
+                raise ValueError("mesh_type must be 'structured', 'tri', or 'quads'")
 
             if mesh_type == "structured":
                 char_length = params.get("char_length", 0.1)
@@ -117,9 +115,9 @@ class MeshGenerator:
         print(f"Mesh saved to: {msh_file}")
 
         # Plot the mesh
-        self.plot(mesh_params, filename.replace(".msh", ".png"))
+        self._plot(mesh_params, filename.replace(".msh", ".png"))
 
-    def plot(self, mesh_params, file_name="mesh.png"):
+    def _plot(self, mesh_params, file_name="mesh.png"):
         """Plots the generated mesh."""
         fig, ax = plt.subplots(figsize=(10, 8))
 
@@ -131,14 +129,14 @@ class MeshGenerator:
 
         patches = []
         for surface_tag in self.surface_tags:
-            mesh_type = mesh_params.get(surface_tag, {}).get("mesh_type", "triangular")
+            mesh_type = mesh_params.get(surface_tag, {}).get("mesh_type", "tri")
 
             elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(
                 2, surface_tag
             )
 
             for i, elem_type in enumerate(elem_types):
-                if elem_type == 2:  # Triangles
+                if elem_type == 2:  # tri
                     color = "blue"
                     if mesh_type in ["structured", "quads"]:
                         color = "yellow"  # Unexpected triangle
@@ -153,7 +151,7 @@ class MeshGenerator:
 
                 elif elem_type == 3:  # Quads
                     color = "red"
-                    if mesh_type == "triangular":
+                    if mesh_type == "tri":
                         color = "green"  # Unexpected quad
 
                     num_elem = len(elem_tags[i])
