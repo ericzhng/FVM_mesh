@@ -1,6 +1,6 @@
-import gmsh
-import unittest
 import os
+import unittest
+import gmsh
 from src.geometry import Geometry
 
 

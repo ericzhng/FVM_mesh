@@ -4,8 +4,6 @@ from pathlib import Path
 import tempfile
 import numpy as np
 
-from src.utility import print_partition
-
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 
 from src.mesh import Mesh
@@ -39,8 +37,8 @@ def make_simple_2d_mesh():
     m.cell_connectivity = cell_connectivity
     m.num_cells = len(cell_connectivity)
     m.analyze_mesh()
-    m.print_summary()
-    m.plot()
+    # m.print_summary()
+    # m.plot()
 
     return m
 
@@ -58,21 +56,37 @@ class TestPartitionMesh(unittest.TestCase):
         """Test METIS partitioning."""
         mesh = make_simple_2d_mesh()
         n_parts = 4
-        parts = partition_mesh(mesh, n_parts, method="metis")
-        print_partition(parts)
-        self.assertEqual(parts.shape[0], mesh.num_cells)
-        self.assertEqual(len(np.unique(parts)), n_parts)
-        mesh.plot(file_name="test_partition.png", parts=parts)
+        result = partition_mesh(mesh, n_parts, method="metis")
+        result.print_summary()
+        self.assertEqual(result.parts.shape[0], mesh.num_cells)
+        self.assertEqual(len(np.unique(result.parts)), n_parts)
+        mesh.plot(file_name="test_partition_metis.png", parts=result.parts)
 
     def test_hierarchical_partitioning(self):
         """Test hierarchical partitioning."""
         mesh = make_simple_2d_mesh()
         n_parts = 4
-        parts = partition_mesh(mesh, n_parts, method="hierarchical")
-        print_partition(parts)
-        self.assertEqual(parts.shape[0], mesh.num_cells)
-        self.assertEqual(len(np.unique(parts)), n_parts)
-        mesh.plot(file_name="test_partition.png", parts=parts)
+        result = partition_mesh(mesh, n_parts, method="hierarchical")
+        result.print_summary()
+        self.assertEqual(result.parts.shape[0], mesh.num_cells)
+        self.assertEqual(len(np.unique(result.parts)), n_parts)
+        mesh.plot(file_name="test_partition.png", parts=result.parts)
+
+    def test_halo_indices(self):
+        """Test that halo indices are created correctly."""
+        mesh = make_simple_2d_mesh()
+        n_parts = 4
+        result = partition_mesh(mesh, n_parts, method="metis")
+
+        halo_indices = result.halo_indices
+        self.assertIsInstance(halo_indices, dict)
+        self.assertEqual(len(halo_indices), n_parts)
+
+        for rank in range(n_parts):
+            self.assertIn(rank, halo_indices)
+            self.assertIn("owned_cells", halo_indices[rank])
+            self.assertIn("send", halo_indices[rank])
+            self.assertIn("recv", halo_indices[rank])
 
 
 if __name__ == "__main__":
