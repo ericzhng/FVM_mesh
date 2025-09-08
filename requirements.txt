@@ -1,5 +1,6 @@
 pyvista
-numpy matplotlib
+numpy
+matplotlib
 gmsh
 scipy
 metis
