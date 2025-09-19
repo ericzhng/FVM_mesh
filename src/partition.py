@@ -54,49 +54,103 @@ class PartitionResult:
             print(f" part {p}: cells = {counts[p]}")
 
     def _build_halo_indices(self) -> Dict:
+        """
+        Builds communication maps for halo exchange between partitions.
+
+        This method creates a set of mappings for each partition (rank) that
+        enables efficient, index-based halo data exchange using MPI. It avoids
+        costly searches by pre-calculating the local indices for sending owned
+        cells and receiving halo cells.
+
+        The output structure for each rank includes:
+        - 'owned_cells': A list of global cell IDs owned by this rank.
+        - 'halo_cells': A list of global cell IDs that make up the halo layer for this rank.
+        - 'send': A dict mapping a neighbor rank to a list of local indices
+                  (into 'owned_cells') of cells to be sent to that neighbor.
+        - 'recv': A dict mapping a neighbor rank to a list of local indices
+                  (into 'halo_cells') where incoming data from that neighbor
+                  should be stored.
+
+        The send and receive lists are ordered to ensure symmetric communication.
+        """
         if not self._mesh._is_analyzed:
             self._mesh.analyze_mesh()
 
+        # 1. Globally determine which cells are sent between which partitions.
+        #    `global_send_map[p][q]` will be a sorted list of global cell IDs
+        #    that partition `p` must send to partition `q`.
+        send_candidates: Dict[int, Dict[int, Set[int]]] = {
+            r: {} for r in range(self.n_parts)
+        }
+        for g_idx, neighbors in enumerate(self._mesh.cell_neighbors):
+            owner_part = self._parts[g_idx]
+            for neighbor_g_idx in neighbors:
+                if neighbor_g_idx != -1:
+                    neighbor_part = self._parts[neighbor_g_idx]
+                    if owner_part != neighbor_part:
+                        # `g_idx` is on the boundary, so `owner_part` must send it
+                        # to `neighbor_part`.
+                        send_candidates[owner_part].setdefault(
+                            int(neighbor_part), set()
+                        ).add(g_idx)
+
+        global_send_map: Dict[int, Dict[int, List[int]]] = {
+            r: {} for r in range(self.n_parts)
+        }
+        for rank, send_dict in send_candidates.items():
+            for neighbor_rank, g_indices_set in send_dict.items():
+                # Sort for a canonical, ordered communication plan.
+                global_send_map[rank][neighbor_rank] = sorted(list(g_indices_set))
+
+        # 2. For each partition, build the final local index-based maps.
         out: Dict[int, Dict] = {}
         for rank in range(self.n_parts):
-            owned_cell_indices = np.where(self._parts == rank)[0]
-            owned_cells_global_to_local = {
-                g_idx: l_idx for l_idx, g_idx in enumerate(owned_cell_indices)
-            }
+            # a. Define local-to-global mapping for owned cells.
+            owned_cells_g = np.where(self._parts == rank)[0]
+            g2l_owned_map = {g: l for l, g in enumerate(owned_cells_g)}
 
-            halo_cells_by_neighbor_rank: Dict[int, Set[int]] = {}
-            for cell_idx in owned_cell_indices:
-                for neighbor_cell_idx in self._mesh.cell_neighbors[cell_idx]:
-                    if neighbor_cell_idx != -1:
-                        neighbor_part = int(self._parts[neighbor_cell_idx])
-                        if neighbor_part != rank:
-                            halo_cells_by_neighbor_rank.setdefault(
-                                neighbor_part, set()
-                            ).add(neighbor_cell_idx)
+            # b. Build the halo layer and its local-to-global mapping.
+            #    The halo is composed of cells this rank receives from its neighbors.
+            #    The order is made deterministic by sorting neighbor ranks.
+            halo_cells_g: List[int] = []
+            halo_from_neighbors_g: Dict[int, List[int]] = {}
 
-            send_map: Dict[int, List[int]] = {}
-            recv_map: Dict[int, List[int]] = {}
+            all_neighbors = set(global_send_map[rank].keys())
+            for r, send_map in global_send_map.items():
+                if rank in send_map:
+                    all_neighbors.add(r)
 
-            for neighbor_rank, halo_cells in halo_cells_by_neighbor_rank.items():
-                recv_map[neighbor_rank] = sorted(list(halo_cells))
+            for neighbor_rank in sorted(list(all_neighbors)):
+                cells_to_recv = global_send_map.get(neighbor_rank, {}).get(rank)
+                if cells_to_recv:
+                    # `cells_to_recv` is already sorted from the global plan.
+                    halo_from_neighbors_g[neighbor_rank] = cells_to_recv
+                    halo_cells_g.extend(cells_to_recv)
 
-                cells_to_send: Set[int] = set()
-                for halo_cell in halo_cells:
-                    for neighbor_of_halo in self._mesh.cell_neighbors[halo_cell]:
-                        if (
-                            neighbor_of_halo != -1
-                            and self._parts[neighbor_of_halo] == rank
-                        ):
-                            cells_to_send.add(neighbor_of_halo)
+            g2l_halo_map = {g: l for l, g in enumerate(halo_cells_g)}
 
-                send_map[neighbor_rank] = sorted(
-                    [owned_cells_global_to_local[g_idx] for g_idx in cells_to_send]
-                )
+            # c. Build the `send` map using local indices of owned cells.
+            send_map_local: Dict[int, List[int]] = {}
+            my_sends_g = global_send_map.get(rank, {})
+            for neighbor_rank, g_indices_to_send in my_sends_g.items():
+                send_map_local[neighbor_rank] = [
+                    g2l_owned_map[g] for g in g_indices_to_send
+                ]
+
+            # d. Build the `recv` map using local indices of halo cells.
+            recv_map_local: Dict[int, List[int]] = {}
+            for neighbor_rank, g_indices_to_recv in halo_from_neighbors_g.items():
+                # The order of received data matches the order of `g_indices_to_recv`.
+                # We map each incoming item to its place in the local halo array.
+                recv_map_local[neighbor_rank] = [
+                    g2l_halo_map[g] for g in g_indices_to_recv
+                ]
 
             out[rank] = {
-                "owned_cells": owned_cell_indices.tolist(),
-                "send": send_map,
-                "recv": recv_map,
+                "owned_cells": owned_cells_g.tolist(),
+                "halo_cells": halo_cells_g,
+                "send": send_map_local,
+                "recv": recv_map_local,
             }
 
         return out

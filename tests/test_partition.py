@@ -77,6 +77,7 @@ class TestPartitionMesh(unittest.TestCase):
         mesh = make_simple_2d_mesh()
         n_parts = 4
         result = partition_mesh(mesh, n_parts, method="metis")
+        mesh.plot(file_name="test_partition_metis_check.png", parts=result.parts)
 
         halo_indices = result.halo_indices
         self.assertIsInstance(halo_indices, dict)
