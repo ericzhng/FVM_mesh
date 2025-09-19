@@ -34,9 +34,6 @@ class TestMesh2D(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
 
-        # For visual debugging, you can uncomment the following line.
-        # gmsh.fltk.run()
-
     def test_structured_mesh_generation(self):
         """Test the generation of a structured mesh."""
         projName = "rect_structured_mesh"
@@ -54,9 +51,6 @@ class TestMesh2D(unittest.TestCase):
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
-
-        # For visual debugging, you can uncomment the following line.
-        # gmsh.fltk.run()
 
     def test_quad_mesh_generation(self):
         """Test the generation of a quad mesh."""
@@ -76,9 +70,6 @@ class TestMesh2D(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
 
-        # For visual debugging, you can uncomment the following line.
-        # gmsh.fltk.run()
-
     def test_invalid_mesh_type(self):
         """Test that an invalid mesh type raises a ValueError."""
         geom = Geometry()
@@ -97,7 +88,6 @@ class TestMesh2D(unittest.TestCase):
 
         geom = Geometry(projName)
         surfaces = geom.rectangle_with_partitions(length=2, width=1, mesh_size=0.2)
-        # gmsh.model.occ.synchronize()
 
         self.assertEqual(len(surfaces), 4)
 
@@ -122,8 +112,28 @@ class TestMesh2D(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
 
-        # For visual debugging, you can uncomment the following line.
-        # gmsh.fltk.run()
+    def test_plot_with_labels(self):
+        """Test the plot generation with node and cell labels."""
+        projName = "plot_with_labels"
+        gmsh.model.add(projName)
+
+        geom = Geometry(projName)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.3)
+
+        mesher = MeshGenerator(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesh_filename = "plot_with_labels.msh"
+        plot_filename = "plot_with_labels.png"
+        mesh_params = {surface_tag: {"mesh_type": "tri", "char_length": 0.3}}
+        mesher.generate(
+            mesh_params=mesh_params,
+            filename=mesh_filename,
+            show_nodes=True,
+            show_cells=True,
+        )
+
+        # Check if the mesh and plot files are created
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
 
 
 if __name__ == "__main__":
