@@ -10,34 +10,50 @@ from scipy.spatial import ConvexHull
 class Geometry:
     """A class to create and manage 2D geometries using gmsh."""
 
-    def __init__(self, output_dir: str = "."):
-        self.output_dir = output_dir
-        os.makedirs(self.output_dir, exist_ok=True)
+    def __init__(self, name: str = ""):
+        self.name = name or "Default Geometry"
 
-    def plot(self, file_name: str = "geometry.png"):
+    def plot(self, file_path: str = "geometry.png"):
         """Plots the wireframe of the current gmsh model."""
         plt.figure()
 
-        for e in gmsh.model.getEntities(1):  # 1D entities (lines)
-            boundary = gmsh.model.getBoundary([e], combined=False)
-            points = []
-            for p in boundary:
-                coords = gmsh.model.getValue(0, p[1], [])
-                points.append(coords)
+        # Generate 1D mesh to get nodes on curves
+        gmsh.model.mesh.generate(1)
 
-            if len(points) == 2:
-                plt.plot(
-                    [points[0][0], points[1][0]], [points[0][1], points[1][1]], "k-"
+        for e in gmsh.model.getEntities(1):  # 1D entities (lines and curves)
+            curve_tag = e[1]
+
+            _, node_coords, _ = gmsh.model.mesh.getNodes(
+                dim=1, tag=curve_tag, includeBoundary=True
+            )
+
+            if len(node_coords) > 0:
+                points = np.array(node_coords).reshape(-1, 3)
+
+                # Sort points based on their parametric coordinates if available
+                # This helps in plotting the curve in the correct order
+                _, _, parametric_coords = gmsh.model.mesh.getNodes(
+                    dim=1,
+                    tag=curve_tag,
+                    includeBoundary=True,
+                    returnParametricCoord=True,
                 )
+                if len(parametric_coords) > 0:
+                    # Sort points based on their parametric coordinates
+                    sorted_indices = np.argsort(parametric_coords)
+                    points = points[sorted_indices]
 
-        plt.title("Geometry Wireframe")
+                plt.plot(points[:, 0], points[:, 1], "k-")
+
+        plt.title(f"{self.name}")
         plt.xlabel("X")
         plt.ylabel("Y")
         plt.grid(True)
         plt.axis("equal")
 
-        plot_file = os.path.join(self.output_dir, file_name)
-        plt.savefig(plot_file)
+        output_dir = os.path.dirname(file_path) or "."
+        os.makedirs(output_dir, exist_ok=True)
+        plt.savefig(file_path)
         plt.close()
 
     def polygon(
