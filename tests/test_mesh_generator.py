@@ -8,7 +8,7 @@ from src.mesh_generator import MeshGenerator
 class TestMesh2D(unittest.TestCase):
     def setUp(self):
         """Set up for the test case."""
-        self.output_dir = "trunk"
+        self.output_dir = "output_geometry"
         os.makedirs(self.output_dir, exist_ok=True)
         gmsh.initialize()
 
@@ -28,7 +28,12 @@ class TestMesh2D(unittest.TestCase):
         mesh_filename = "triangular_mesh.msh"
         plot_filename = "triangular_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "tri", "char_length": 0.1}}
-        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+        mesher.generate(
+            mesh_params=mesh_params,
+            filename=mesh_filename,
+            show_nodes=True,
+            show_cells=True,
+        )
 
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
@@ -46,7 +51,12 @@ class TestMesh2D(unittest.TestCase):
         mesh_filename = "structured_mesh.msh"
         plot_filename = "structured_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "structured", "char_length": 0.2}}
-        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+        mesher.generate(
+            mesh_params=mesh_params,
+            filename=mesh_filename,
+            show_nodes=True,
+            show_cells=True,
+        )
 
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
@@ -64,7 +74,12 @@ class TestMesh2D(unittest.TestCase):
         mesh_filename = "quad_mesh.msh"
         plot_filename = "quad_mesh.png"
         mesh_params = {surface_tag: {"mesh_type": "quads"}}
-        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+        mesher.generate(
+            mesh_params=mesh_params,
+            filename=mesh_filename,
+            show_nodes=True,
+            show_cells=True,
+        )
 
         # Check if the mesh and plot files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
@@ -87,7 +102,7 @@ class TestMesh2D(unittest.TestCase):
         gmsh.model.add(projName)
 
         geom = Geometry(projName)
-        surfaces = geom.rectangle_with_partitions(length=2, width=1, mesh_size=0.2)
+        surfaces = geom.rectangle_with_partitions(length=10, width=10, mesh_size=0.5)
 
         self.assertEqual(len(surfaces), 4)
 
@@ -106,7 +121,12 @@ class TestMesh2D(unittest.TestCase):
         plot_filename = "mixed_mesh_all_surfaces.png"
 
         # 4. Generate the mesh
-        mesher.generate(mesh_params=mesh_params, filename=mesh_filename)
+        mesher.generate(
+            mesh_params=mesh_params,
+            filename=mesh_filename,
+            show_nodes=True,
+            show_cells=True,
+        )
 
         # 5. Check if all files are created
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))

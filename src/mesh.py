@@ -7,6 +7,7 @@ from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 from matplotlib.collections import PatchCollection
+from src.utility import plot_mesh
 
 
 class Mesh:
@@ -609,171 +610,14 @@ class Mesh:
 
         fig, ax = plt.subplots(figsize=(10, 8))
 
-        # Get nodes (already available in self.node_coords)
-        x = self.node_coords[:, 0]
-        y = self.node_coords[:, 1]
-
-        # Determine dynamic font size
-        base_font_size_cell = 14
-        base_font_size_node = 12
-        cell_font_scale = (
-            max(0.5, 1 - np.log10(self.num_cells + 1) / 3) if self.num_cells > 0 else 1
-        )
-        node_font_scale = (
-            max(0.5, 1 - np.log10(self.num_nodes + 1) / 3) if self.num_nodes > 0 else 1
-        )
-        cell_fontsize = base_font_size_cell * cell_font_scale
-        node_fontsize = base_font_size_node * node_font_scale
-
-        patches = []
-        colors = None
-        num_parts = 0
-        if parts is not None:
-            # Generate a color map for the partitions
-            unique_parts = np.unique(parts)
-            num_parts = len(unique_parts)
-            try:
-                colors = plt.cm.get_cmap("viridis", num_parts)
-            except (ValueError, TypeError):
-                # Fallback to a default colormap if 'viridis' with num_parts is invalid
-                colors = plt.cm.get_cmap("viridis")
-
-        for i, cell_conn in enumerate(self.cell_connectivity):
-            if parts is not None and colors is not None:
-                part_id = parts[i]
-                # Normalize part_id to be in [0, 1] for the colormap
-                normalized_part_id = (
-                    (part_id - unique_parts.min())
-                    / (unique_parts.max() - unique_parts.min())
-                    if num_parts > 1
-                    else 0.5
-                )
-                color = colors(normalized_part_id)
-            else:
-                # Default coloring by cell type
-                color = "#FFD700"  # Gold for default/unspecified
-                if len(cell_conn) == 3:
-                    color = "#87CEEB"  # SkyBlue for triangles
-                elif len(cell_conn) == 4:
-                    color = "#90EE90"  # LightGreen for quadrilaterals
-
-            all_points = np.array([[x[k], y[k]] for k in cell_conn])
-            polygon = Polygon(all_points, facecolor=color, edgecolor="k", alpha=0.6)
-            patches.append(polygon)
-
-            # Add cell labels
-            cell_centroid_x = float(np.mean([x[k] for k in cell_conn]))
-            cell_centroid_y = float(np.mean([y[k] for k in cell_conn]))
-            ax.text(
-                cell_centroid_x,
-                cell_centroid_y,
-                str(i),
-                color="black",
-                ha="center",
-                va="center",
-                fontsize=cell_fontsize,
-                weight="bold",
-                bbox=dict(
-                    facecolor="white",
-                    alpha=0.7,
-                    edgecolor="none",
-                    boxstyle="round,pad=0.2",
-                ),
-            )
-
-        # Add node labels
-        for i in range(self.num_nodes):
-            ax.text(
-                float(x[i]),
-                float(y[i]),
-                str(i),
-                color="darkred",
-                ha="center",
-                va="center",
-                fontsize=node_fontsize,
-                bbox=dict(
-                    facecolor="yellow",
-                    alpha=0.7,
-                    edgecolor="none",
-                    boxstyle="round,pad=0.1",
-                ),
-            )
-
-        p = PatchCollection(patches, match_original=True)
-        ax.add_collection(p)
-
-        ax.set_title("Generated Mesh with Labels", fontsize=14, weight="bold")
-        ax.set_xlabel("X-coordinate", fontsize=12)
-        ax.set_ylabel("Y-coordinate", fontsize=12)
-        ax.grid(True, linestyle=":", alpha=0.7)
-        ax.set_aspect("equal", adjustable="box")
-        ax.autoscale_view()
-
-        for spine in ax.spines.values():
-            spine.set_edgecolor("gray")
-            spine.set_linewidth(1.5)
-
-        legend_handles = []
-        if parts is not None and colors is not None:
-            # Create legend for partitions
-            for i, part_id in enumerate(unique_parts):
-                normalized_part_id = (
-                    (part_id - unique_parts.min())
-                    / (unique_parts.max() - unique_parts.min())
-                    if num_parts > 1
-                    else 0.5
-                )
-                legend_handles.append(
-                    Rectangle(
-                        (0, 0),
-                        1,
-                        1,
-                        color=colors(normalized_part_id),
-                        label=f"Part {part_id}",
-                    )
-                )
-
-        else:
-            # Create legend for cell types
-            legend_handles.append(
-                Rectangle((0, 0), 1, 1, color="#87CEEB", label="Triangle")
-            )
-            legend_handles.append(
-                Rectangle((0, 0), 1, 1, color="#90EE90", label="Quadrilateral")
-            )
-            legend_handles.append(
-                Rectangle((0, 0), 1, 1, color="#FFD700", label="Other")
-            )
-
-        cell_label_patch = Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Cell Labels",
-            markerfacecolor="black",
-            markersize=base_font_size_cell * 0.8,
-        )
-        node_label_patch = Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Node Labels",
-            markerfacecolor="darkred",
-            markersize=base_font_size_node * 0.8,
-        )
-        legend_handles.extend([cell_label_patch, node_label_patch])
-
-        ax.legend(
-            handles=legend_handles,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.2),
-            fontsize=10,
-            frameon=True,
-            fancybox=True,
-            shadow=True,
-            ncol=max(2, num_parts if parts is not None else 3),
+        plot_mesh(
+            ax,
+            self.node_coords[:, :2],
+            self.cell_connectivity,
+            show_nodes=True,
+            show_cells=True,
+            parts=parts,
+            title="Generated Mesh with Labels",
         )
 
         plt.savefig(plot_file, dpi=300, bbox_inches="tight")

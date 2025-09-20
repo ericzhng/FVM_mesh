@@ -6,7 +6,7 @@ from src.geometry import Geometry
 
 class TestGeometry(unittest.TestCase):
     def setUp(self):
-        self.output_dir = "./trunk"
+        self.output_dir = "output_geometry"
         os.makedirs(self.output_dir, exist_ok=True)
 
     def tearDown(self):

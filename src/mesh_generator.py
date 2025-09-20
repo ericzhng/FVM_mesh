@@ -3,9 +3,8 @@ import os
 import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from matplotlib.patches import Polygon, Rectangle
-from matplotlib.collections import PatchCollection
+
+from src.utility import plot_mesh
 
 
 class MeshGenerator:
@@ -130,131 +129,32 @@ class MeshGenerator:
 
         # Get nodes
         node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-        x = node_coords[0::3]
-        y = node_coords[1::3]
+        nodes = np.array(node_coords).reshape(-1, 3)
         node_map = {tag: i for i, tag in enumerate(node_tags)}
-        num_nodes = len(node_tags)
 
         # Get cells
-        elem_tags_global = []
-        elem_node_tags_global = []
-        elem_types_global = []
+        cells = []
         for surface_tag in self.surface_tags:
             elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(
                 2, surface_tag
             )
             for i, elem_type in enumerate(elem_types):
-                elem_types_global.append(elem_type)
-                elem_tags_global.append(elem_tags[i])
-                elem_node_tags_global.append(elem_node_tags[i])
+                num_nodes_per_elem = 0
+                if elem_type == 2:  # 3-node triangle
+                    num_nodes_per_elem = 3
+                elif elem_type == 3:  # 4-node quad
+                    num_nodes_per_elem = 4
 
-        num_cells = sum(len(tags) for tags in elem_tags_global)
-
-        # Determine dynamic font size
-        base_font_size_cell = 10
-        base_font_size_node = 8
-        cell_font_scale = (
-            max(0.5, 1 - np.log10(num_cells + 1) / 4) if num_cells > 0 else 1
-        )
-        node_font_scale = (
-            max(0.5, 1 - np.log10(num_nodes + 1) / 4) if num_nodes > 0 else 1
-        )
-        cell_fontsize = base_font_size_cell * cell_font_scale
-        node_fontsize = base_font_size_node * node_font_scale
-
-        patches = []
-        cell_counter = 0
-        for i, elem_type in enumerate(elem_types_global):
-            num_nodes_per_elem = 0
-            if elem_type == 2:  # 3-node triangle
-                num_nodes_per_elem = 3
-                color = "#87CEEB"
-            elif elem_type == 3:  # 4-node quad
-                num_nodes_per_elem = 4
-                color = "#90EE90"
-            else:
-                color = "#FFD700"
-
-            if num_nodes_per_elem > 0:
-                num_elem = len(elem_tags_global[i])
-                for j in range(num_elem):
-                    node_tags_for_elem = elem_node_tags_global[i][
-                        j * num_nodes_per_elem : (j + 1) * num_nodes_per_elem
-                    ]
-                    node_indices = [node_map[tag] for tag in node_tags_for_elem]
-                    points = np.array([[x[k], y[k]] for k in node_indices])
-                    polygon = Polygon(
-                        points, facecolor=color, edgecolor="k", alpha=0.7, lw=0.5
-                    )
-                    patches.append(polygon)
-
-                    if show_cells:
-                        cell_centroid_x = float(np.mean(points[:, 0]))
-                        cell_centroid_y = float(np.mean(points[:, 1]))
-                        ax.text(
-                            cell_centroid_x,
-                            cell_centroid_y,
-                            str(cell_counter),
-                            color="black",
-                            ha="center",
-                            va="center",
-                            fontsize=cell_fontsize,
-                            weight="bold",
-                            bbox=dict(
-                                facecolor="white",
-                                alpha=0.6,
-                                edgecolor="none",
-                                boxstyle="round,pad=0.2",
-                            ),
-                        )
-                    cell_counter += 1
-
-        if show_nodes:
-            for i in range(num_nodes):
-                ax.text(
-                    float(x[i]),
-                    float(y[i]),
-                    str(i),
-                    color="darkred",
-                    ha="center",
-                    va="center",
-                    fontsize=node_fontsize,
-                    bbox=dict(
-                        facecolor="yellow",
-                        alpha=0.6,
-                        edgecolor="none",
-                        boxstyle="round,pad=0.1",
-                    ),
-                )
-
-        p = PatchCollection(patches, match_original=True)
-        ax.add_collection(p)
+                if num_nodes_per_elem > 0:
+                    num_elem = len(elem_tags[i])
+                    for j in range(num_elem):
+                        node_tags_for_elem = elem_node_tags[i][
+                            j * num_nodes_per_elem : (j + 1) * num_nodes_per_elem
+                        ]
+                        cells.append([node_map[tag] for tag in node_tags_for_elem])
 
         model_name = gmsh.model.getCurrent() or "default"
-        ax.set_title(f"{model_name} Mesh", fontsize=16, weight="bold", pad=20)
-        ax.set_xlabel("X-coordinate", fontsize=12)
-        ax.set_ylabel("Y-coordinate", fontsize=12)
-        ax.grid(True, linestyle="--", alpha=0.5)
-        ax.set_aspect("equal", adjustable="box")
-        ax.autoscale_view()
-
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-
-        legend_handles = [
-            Rectangle((0, 0), 1, 1, color="#87CEEB", label="Triangle"),
-            Rectangle((0, 0), 1, 1, color="#90EE90", label="Quads"),
-            Rectangle((0, 0), 1, 1, color="#FFD700", label="Other"),
-        ]
-
-        ax.legend(
-            handles=legend_handles,
-            loc="upper right",
-            bbox_to_anchor=(1, 1.025),
-            fontsize=10,
-            frameon=False,
-            ncol=len(legend_handles),
-        )
+        plot_mesh(ax, nodes, cells, show_nodes, show_cells, title=f"{model_name} Mesh")
 
         plot_file = os.path.join(self.output_dir, file_name)
         plt.savefig(plot_file, dpi=300, bbox_inches="tight")
