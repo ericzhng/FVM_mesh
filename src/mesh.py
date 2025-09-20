@@ -596,7 +596,7 @@ class Mesh:
         print("\n" + "=" * 80)
 
     def plot(
-        self, file_name: str = "mesh_plot.png", parts: Optional[np.ndarray] = None
+        self, plot_file: str = "mesh_plot.png", parts: Optional[np.ndarray] = None
     ):
         """
         Plots the generated mesh with cell and node labels.
@@ -776,7 +776,6 @@ class Mesh:
             ncol=max(2, num_parts if parts is not None else 3),
         )
 
-        plot_file = os.path.join(file_name)
         plt.savefig(plot_file, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Mesh plot saved to: {plot_file}")
