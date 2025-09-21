@@ -13,6 +13,12 @@ class Geometry:
     def __init__(self, name: str = ""):
         self.name = name or "Default Geometry"
 
+    def get_bounding_box(self) -> Tuple[float, float, float, float]:
+        """Computes the bounding box of the entire geometry."""
+        gmsh.model.geo.synchronize()
+        min_x, min_y, _, max_x, max_y, _ = gmsh.model.getBoundingBox(-1, -1)
+        return min_x, min_y, max_x, max_y
+
     def plot(self, file_path: str = "geometry.png"):
         """Plots the wireframe of the current gmsh model."""
         plt.figure()

@@ -596,9 +596,7 @@ class Mesh:
 
         print("\n" + "=" * 80)
 
-    def plot(
-        self, plot_file: str = "mesh_plot.png", parts: Optional[np.ndarray] = None
-    ):
+    def plot(self, filepath: str = "mesh_plot.png", parts: Optional[np.ndarray] = None):
         """
         Plots the generated mesh with cell and node labels.
         If 'parts' is provided, cells are colored by partition. Otherwise, they are
@@ -620,9 +618,9 @@ class Mesh:
             title="Generated Mesh with Labels",
         )
 
-        plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
         plt.close()
-        print(f"Mesh plot saved to: {plot_file}")
+        print(f"Mesh plot saved to: {filepath}")
 
 
 if __name__ == "__main__":

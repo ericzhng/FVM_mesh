@@ -60,7 +60,7 @@ class TestPartitionMesh(unittest.TestCase):
         result.print_summary()
         self.assertEqual(result.parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(result.parts)), n_parts)
-        mesh.plot(file_name="test_partition_metis.png", parts=result.parts)
+        mesh.plot("test_partition_metis.png", parts=result.parts)
 
     def test_hierarchical_partitioning(self):
         """Test hierarchical partitioning."""
@@ -70,14 +70,14 @@ class TestPartitionMesh(unittest.TestCase):
         result.print_summary()
         self.assertEqual(result.parts.shape[0], mesh.num_cells)
         self.assertEqual(len(np.unique(result.parts)), n_parts)
-        mesh.plot(file_name="test_partition.png", parts=result.parts)
+        mesh.plot("test_partition.png", parts=result.parts)
 
     def test_halo_indices(self):
         """Test that halo indices are created correctly."""
         mesh = make_simple_2d_mesh()
         n_parts = 4
         result = partition_mesh(mesh, n_parts, method="metis")
-        mesh.plot(file_name="test_partition_metis_check.png", parts=result.parts)
+        mesh.plot("test_partition_metis_check.png", parts=result.parts)
 
         halo_indices = result.halo_indices
         self.assertIsInstance(halo_indices, dict)

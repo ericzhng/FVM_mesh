@@ -8,13 +8,11 @@ from src.mesh import Mesh
 class TestMeshAnalysis(unittest.TestCase):
 
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.tmp_path = Path(self.tmpdir.name)
-
-        self.test_msh_file = "trunk/mixed_mesh_all_surfaces.msh"
+        self.tmp_path = "output_generation"
+        self.test_msh_file = "data/mixed_mesh_all_surfaces.msh"
 
     def tearDown(self):
-        self.tmpdir.cleanup()
+        pass
 
     def test_is_analyzed_flag(self):
         mesh = Mesh()
@@ -25,7 +23,7 @@ class TestMeshAnalysis(unittest.TestCase):
         self.assertTrue(mesh._is_analyzed)  # Should be True after analysis
         mesh._compute_quality()
         mesh.print_summary()
-        mesh.plot(plot_file=str("trunk" + "/mesh_plot.png"))
+        mesh.plot(plot_file=self.tmp_path + "/mesh_plot.png")
 
 
 if __name__ == "__main__":

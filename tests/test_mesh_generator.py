@@ -8,7 +8,7 @@ from src.mesh_generator import MeshGenerator
 class TestMesh2D(unittest.TestCase):
     def setUp(self):
         """Set up for the test case."""
-        self.output_dir = "output_geometry"
+        self.output_dir = "output_generation"
         os.makedirs(self.output_dir, exist_ok=True)
         gmsh.initialize()
 
@@ -45,12 +45,12 @@ class TestMesh2D(unittest.TestCase):
         gmsh.model.add(projName)
 
         geom = Geometry(projName)
-        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.2)
+        surface_tag = geom.rectangle(length=100, width=100, mesh_size=2)
 
         mesher = MeshGenerator(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "structured_mesh.msh"
         plot_filename = "structured_mesh.png"
-        mesh_params = {surface_tag: {"mesh_type": "structured", "char_length": 0.2}}
+        mesh_params = {surface_tag: {"mesh_type": "structured", "char_length": 5}}
         mesher.generate(
             mesh_params=mesh_params,
             filename=mesh_filename,

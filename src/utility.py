@@ -19,6 +19,14 @@ def polygon_area(points):
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 
+def get_geometry_extent(nodes):
+    """Computes the extent of the geometry based on node coordinates."""
+    min_coords = np.min(nodes, axis=0)
+    max_coords = np.max(nodes, axis=0)
+    extent = np.linalg.norm(max_coords - min_coords)
+    return extent if extent > 0 else 1.0
+
+
 def plot_mesh(
     ax, nodes, cells, show_nodes=False, show_cells=False, parts=None, title="Mesh"
 ):
@@ -38,12 +46,7 @@ def plot_mesh(
         nodes = nodes[:, :2]
 
     num_nodes = nodes.shape[0]
-    num_cells = len(cells)
-
-    # Determine dynamic font size for nodes
-    base_font_size_node = 4
-    node_font_scale = max(0.5, 1 - np.log10(num_nodes + 1) / 2) if num_nodes > 0 else 1
-    node_fontsize = base_font_size_node * node_font_scale
+    geometry_extent = get_geometry_extent(nodes)
 
     patches = []
 
@@ -74,7 +77,10 @@ def plot_mesh(
 
         if show_cells:
             area = polygon_area(points)
-            cell_fontsize = max(2, min(12, int(np.sqrt(area) * 12)))
+            # Scale font size based on the element area relative to the geometry extent
+            font_scale_factor = np.sqrt(area) / geometry_extent
+            cell_fontsize = max(2, int(font_scale_factor * 120))
+
             cell_centroid = np.mean(points, axis=0)
             ax.text(
                 cell_centroid[0],
@@ -94,7 +100,34 @@ def plot_mesh(
             )
 
     if show_nodes:
+        # Pre-compute node-to-cell connectivity
+        node_to_cells = [[] for _ in range(num_nodes)]
+        for i, cell_conn in enumerate(cells):
+            for node_idx in cell_conn:
+                node_to_cells[node_idx].append(i)
+
         for i in range(num_nodes):
+            # Find neighboring nodes
+            neighbor_nodes = set()
+            for cell_idx in node_to_cells[i]:
+                for node_idx in cells[cell_idx]:
+                    if node_idx != i:
+                        neighbor_nodes.add(node_idx)
+
+            if not neighbor_nodes:
+                # Default font size for isolated nodes
+                node_fontsize = 8
+            else:
+                # Calculate average distance to neighboring nodes
+                distances = np.linalg.norm(
+                    nodes[list(neighbor_nodes)] - nodes[i], axis=1
+                )
+                avg_dist = np.mean(distances)
+
+                # Scale font size based on the average distance relative to the geometry extent
+                font_scale_factor = avg_dist / geometry_extent
+                node_fontsize = max(2, int(font_scale_factor * 100))
+
             ax.text(
                 nodes[i, 0],
                 nodes[i, 1],
@@ -115,8 +148,8 @@ def plot_mesh(
     ax.add_collection(p)
 
     ax.set_title(title, fontsize=18, pad=20)
-    ax.set_xlabel("X-coordinate", fontsize=14, labelpad=8)
-    ax.set_ylabel("Y-coordinate", fontsize=14, labelpad=8)
+    ax.set_xlabel("X", fontsize=14, labelpad=8)
+    ax.set_ylabel("Y", fontsize=14, labelpad=8)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.set_aspect("equal", adjustable="box")
     ax.tick_params(axis="both", which="major", pad=2, labelsize=12)
