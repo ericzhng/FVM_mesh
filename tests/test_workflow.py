@@ -17,24 +17,24 @@ from src.partition import partition_mesh
 class TestWorkflow(unittest.TestCase):
 
     def setUp(self):
-        self.tmp_path = "./test_output"
+        self.tmp_path = "test_output"
         os.makedirs(self.tmp_path, exist_ok=True)
 
         mesh_filename = "test_mesh.msh"
-        mesh_filepath = Path(self.tmp_path) / mesh_filename
+        self.mesh_filepath = Path(self.tmp_path) / mesh_filename
 
         # Create geometry and then mesh
         gmsh.initialize()
         gmsh.model.add("rect_grid_mesh")
-        geom = Geometry(output_dir=self.tmp_path)
-        surfaces = geom.rectangle(length=10, width=10, mesh_size=1)
+        geom = Geometry("rect_grid_mesh")
+        surfaces = geom.rectangle(length=10, width=10, mesh_size=2)
 
         mesh_gen = MeshGenerator(surface_tags=surfaces, output_dir=self.tmp_path)
-        mesh_params = {surfaces: {"mesh_type": "tri", "char_length": 0.5}}
+        mesh_params = {surfaces: {"mesh_type": "tri", "char_length": 2}}
         mesh_gen.generate(mesh_params=mesh_params, filename=mesh_filename)
         gmsh.finalize()
 
-        self.assertTrue(mesh_filepath.exists(), "Mesh file was not created.")
+        self.assertTrue(self.mesh_filepath.exists(), "Mesh file was not created.")
 
     def tearDown(self):
         # show the temp dir in explorer
@@ -47,7 +47,9 @@ class TestWorkflow(unittest.TestCase):
             try:
                 subprocess.run(["xdg-open", path_to_open], check=False)
             except FileNotFoundError:
-                print(f"Could not open directory {path_to_open}. Please open it manually.")
+                print(
+                    f"Could not open directory {path_to_open}. Please open it manually."
+                )
 
     def test_full_workflow(self):
         """
@@ -60,13 +62,15 @@ class TestWorkflow(unittest.TestCase):
         # 1. Generate a global mesh (e.g., a 10x10 grid)
 
         # 2. Read mesh, analyze and then partition
-        mesh = Mesh()
-        mesh.read_gmsh(str(mesh_filepath))
-        mesh.analyze_mesh()
-        mesh.print_summary()
+        global_mesh = Mesh()
+        global_mesh.read_gmsh(str(self.mesh_filepath))
+        global_mesh.analyze_mesh()
+        global_mesh.print_summary()
 
-        self.assertGreater(mesh.num_cells, 0, "Mesh should have cells after reading.")
-        self.assertTrue(mesh._is_analyzed, "Mesh should be analyzed.")
+        self.assertGreater(
+            global_mesh.num_cells, 0, "Mesh should have cells after reading."
+        )
+        self.assertTrue(global_mesh._is_analyzed, "Mesh should be analyzed.")
 
         # 2. Partition the mesh into 4 parts
         n_parts = 4
