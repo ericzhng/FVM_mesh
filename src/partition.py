@@ -17,7 +17,10 @@ class PartitionResult:
     """Holds the result of a mesh partition, providing access to halo data."""
 
     def __init__(self, mesh: Mesh, parts: np.ndarray):
-        self._mesh = mesh
+        if not mesh._is_analyzed:
+            mesh.analyze_mesh()
+        self.cell_neighbors = mesh.cell_neighbors
+
         self._parts = parts
         self._halo_indices: Optional[Dict] = None
 
@@ -73,16 +76,13 @@ class PartitionResult:
 
         The send and receive lists are ordered to ensure symmetric communication.
         """
-        if not self._mesh._is_analyzed:
-            self._mesh.analyze_mesh()
-
         # 1. Globally determine which cells are sent between which partitions.
         #    `global_send_map[p][q]` will be a sorted list of global cell IDs
         #    that partition `p` must send to partition `q`.
         send_candidates: Dict[int, Dict[int, Set[int]]] = {
             r: {} for r in range(self.n_parts)
         }
-        for g_idx, neighbors in enumerate(self._mesh.cell_neighbors):
+        for g_idx, neighbors in enumerate(self.cell_neighbors):
             owner_part = self._parts[g_idx]
             for neighbor_g_idx in neighbors:
                 if neighbor_g_idx != -1:
@@ -179,9 +179,8 @@ def partition_mesh(
         if not mesh._is_analyzed:
             mesh.analyze_mesh()
 
-        adjacency = _get_adjacency(mesh)
-
         if method == "metis":
+            adjacency = _get_adjacency(mesh)
             parts = _partition_with_metis(adjacency, n_parts, cell_weights)
         elif method == "hierarchical":
             parts = _partition_with_hierarchical(mesh, n_parts, cell_weights)
