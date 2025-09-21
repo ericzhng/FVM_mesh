@@ -79,7 +79,7 @@ def plot_mesh(
             area = polygon_area(points)
             # Scale font size based on the element area relative to the geometry extent
             font_scale_factor = np.sqrt(area) / geometry_extent
-            cell_fontsize = max(2, int(font_scale_factor * 120))
+            cell_fontsize = min(max(2, int(font_scale_factor * 120)), 10)
 
             cell_centroid = np.mean(points, axis=0)
             ax.text(
@@ -126,7 +126,7 @@ def plot_mesh(
 
                 # Scale font size based on the average distance relative to the geometry extent
                 font_scale_factor = avg_dist / geometry_extent
-                node_fontsize = max(2, int(font_scale_factor * 100))
+                node_fontsize = min(max(2, int(font_scale_factor * 100)), 10)
 
             ax.text(
                 nodes[i, 0],
