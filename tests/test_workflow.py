@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 import gmsh
+import sys
 import numpy as np
 
 from src.geometry import Geometry
@@ -37,7 +38,16 @@ class TestWorkflow(unittest.TestCase):
 
     def tearDown(self):
         # show the temp dir in explorer
-        subprocess.run(["explorer", str(Path(self.tmp_path).resolve())])
+        path_to_open = str(Path(self.tmp_path).resolve())
+        if sys.platform == "win32":
+            subprocess.run(["explorer", path_to_open], check=False)
+        elif sys.platform == "darwin":  # macOS
+            subprocess.run(["open", path_to_open], check=False)
+        else:  # Linux and other UNIX-like
+            try:
+                subprocess.run(["xdg-open", path_to_open], check=False)
+            except FileNotFoundError:
+                print(f"Could not open directory {path_to_open}. Please open it manually.")
 
     def test_full_workflow(self):
         """
