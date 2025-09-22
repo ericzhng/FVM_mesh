@@ -1,12 +1,9 @@
 
-data/*msh
-decomposed/**
-
-*.png
-
 **/*.pyc
 **/__pycache__
 
 trunk/**
 
-*.msh
+*.png
+
+results/**
