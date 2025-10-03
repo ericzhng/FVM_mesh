@@ -127,6 +127,7 @@ class Geometry:
 
         curve_loop = gmsh.model.geo.addCurveLoop(arcs)
         surface = gmsh.model.geo.addPlaneSurface([curve_loop])
+        gmsh.model.geo.remove([(0, center)], recursive=False)
         gmsh.model.geo.synchronize()
         return surface
 
@@ -177,6 +178,7 @@ class Geometry:
 
         curve_loop = gmsh.model.geo.addCurveLoop(arcs)
         surface = gmsh.model.geo.addPlaneSurface([curve_loop])
+        gmsh.model.geo.remove([(0, center)], recursive=False)
         gmsh.model.geo.synchronize()
         return surface
 

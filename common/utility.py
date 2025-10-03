@@ -99,6 +99,9 @@ def plot_mesh(
                 ),
             )
 
+    p = PatchCollection(patches, match_original=True)
+    ax.add_collection(p)
+
     if show_nodes:
         # Pre-compute node-to-cell connectivity
         node_to_cells = [[] for _ in range(num_nodes)]
@@ -143,9 +146,6 @@ def plot_mesh(
                     boxstyle="round,pad=0.1",
                 ),
             )
-
-    p = PatchCollection(patches, match_original=True)
-    ax.add_collection(p)
 
     ax.set_title(title, fontsize=18, pad=20)
     ax.set_xlabel("X", fontsize=14, labelpad=8)

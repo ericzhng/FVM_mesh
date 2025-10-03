@@ -124,13 +124,13 @@ class TestMesh2D(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, mesh_filename)))
         self.assertTrue(os.path.exists(os.path.join(self.output_dir, plot_filename)))
 
-    def test_structured_mesh_on_circle(self):
-        """Test the generation of a structured mesh on a circle."""
-        projName = "structured_mesh_on_circle"
+    def test_triangular_mesh_on_circle(self):
+        """Test the generation of a unstructured mesh on a circle."""
+        projName = "unstructured_mesh_on_circle"
         gmsh.model.add(projName)
 
         geom = Geometry(projName)
-        surface_tag = geom.circle(radius=1, mesh_size=0.1)
+        surface_tag = geom.circle(radius=1, mesh_size=0.5)
 
         mesher = MeshGenerator(surface_tags=surface_tag, output_dir=self.output_dir)
         mesh_filename = "circle_mesh.msh"
