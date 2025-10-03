@@ -10,7 +10,7 @@ import numpy as np
 from meshgen.geometry import Geometry
 from meshgen.mesh_generator import MeshGenerator
 from polymesh.mesh import Mesh
-from polymesh.local_mesh import LocalMesh
+from polymesh.mesh_ext import LocalMesh
 from polymesh.partition import partition_mesh
 
 
