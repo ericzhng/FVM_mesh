@@ -4,10 +4,10 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import reverse_cuthill_mckee
 
-from polymesh.mesh import Mesh
+from polymesh.core_mesh import CoreMesh
 
 
-def renumber_nodes(mesh: Mesh, strategy: str = "sequential") -> Mesh:
+def renumber_nodes(mesh: CoreMesh, strategy: str = "sequential") -> CoreMesh:
     """
     Renumbers the nodes of a mesh globally based on a specified strategy.
 
@@ -71,7 +71,7 @@ def renumber_nodes(mesh: Mesh, strategy: str = "sequential") -> Mesh:
     return new_mesh
 
 
-def _get_adjacency(mesh: Mesh) -> csr_matrix:
+def _get_adjacency(mesh: CoreMesh) -> csr_matrix:
     """Builds the cell adjacency matrix."""
     if mesh.num_cells == 0:
         return csr_matrix((0, 0), dtype=int)
@@ -259,7 +259,7 @@ def _gps_ordering(adj_matrix: csr_matrix) -> np.ndarray:
     return np.array(cm_order, dtype=int)[::-1]
 
 
-def renumber_cells(mesh: Mesh, strategy: str = "rcm") -> Mesh:
+def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
     """
     Renumbers the cells of a mesh to optimize matrix bandwidth for FVM solvers.
 
@@ -312,7 +312,7 @@ def renumber_cells(mesh: Mesh, strategy: str = "rcm") -> Mesh:
         )
 
     # 2. Create a new mesh with the reordered cell connectivity
-    new_mesh = Mesh()
+    new_mesh = CoreMesh()
     new_mesh.dimension = mesh.dimension
     new_mesh.node_coords = mesh.node_coords.copy()
     new_mesh.num_nodes = mesh.num_nodes

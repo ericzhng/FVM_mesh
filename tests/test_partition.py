@@ -1,76 +1,16 @@
 import os
 import unittest
 
-import gmsh
 import numpy as np
 
-from meshgen.geometry import Geometry
-from meshgen.mesh_generator import MeshGenerator
-from polymesh.mesh import Mesh
-
-os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
-from polymesh.partition import partition_mesh
+from polymesh.core_mesh import CoreMesh
 
 
-def make_simple_2d_mesh():
-    """Creates a simple 2D mesh with 9 quadrilateral cells for testing."""
-    m = Mesh()
-    m.dimension = 2
-
-    # Create a 4x4 grid of nodes
-    x = np.linspace(0, 1, 5)
-    y = np.linspace(0, 1, 5)
-    xx, yy = np.meshgrid(x, y)
-    nodes = np.vstack([xx.ravel(), yy.ravel(), np.zeros(xx.size)]).T
-    m.node_coords = nodes
-    m.num_nodes = m.node_coords.shape[0]
-
-    # Create 3x3 grid of quad cells
-    cell_connectivity = []
-    for j in range(4):
-        for i in range(4):
-            # Node indices for the current cell
-            n0 = j * 5 + i
-            n1 = j * 5 + i + 1
-            n2 = (j + 1) * 5 + i + 1
-            n3 = (j + 1) * 5 + i
-            cell_connectivity.append([n0, n1, n2, n3])
-
-    m.cell_connectivity = cell_connectivity
-    m.num_cells = len(cell_connectivity)
-    m.analyze_mesh()
-    # m.print_summary()
-    # m.plot()
-
-    return m
-
-
-def make_complex_2d_mesh():
-    """Test the generation of a structured mesh."""
-    projName = "rectangular_structured_mesh"
-    gmsh.initialize()
-
-    gmsh.model.add(projName)
-
-    geom = Geometry(projName)
-    surface_tag = geom.rectangle(length=100, width=100, mesh_size=5)
-
-    mesher = MeshGenerator(surface_tags=surface_tag, output_dir="output_partition")
-    mesh_filename = "structured_mesh.msh"
-    mesh_params = {surface_tag: {"mesh_type": "tri", "char_length": 5}}
-    mesher.generate(
-        mesh_params=mesh_params,
-        filename=mesh_filename,
-        show_nodes=True,
-        show_cells=True,
-    )
-    gmsh.finalize()
-
-    mesh = Mesh()
-    mesh.read_gmsh(str(os.path.join("output_partition", mesh_filename)))
-    mesh.analyze_mesh()
-    mesh.print_summary()
-
+def make_test_mesh():
+    """Creates a test mesh from a file."""
+    msh_file = os.path.join(os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh")
+    mesh = CoreMesh()
+    mesh.read_gmsh(msh_file)
     return mesh
 
 
@@ -80,12 +20,9 @@ class TestPartitionMesh(unittest.TestCase):
         self.tmp_path = "results/partition"
         os.makedirs(self.tmp_path, exist_ok=True)
 
-    def tearDown(self):
-        pass
-
     def test_metis_partitioning(self):
         """Test METIS partitioning."""
-        mesh = make_complex_2d_mesh()
+        mesh = make_test_mesh()
         n_parts = 4
         result = partition_mesh(mesh, n_parts, method="metis")
         result.print_summary()
@@ -108,7 +45,7 @@ class TestPartitionMesh(unittest.TestCase):
 
     def test_hierarchical_partitioning(self):
         """Test hierarchical partitioning."""
-        mesh = make_complex_2d_mesh()
+        mesh = make_test_mesh()
         n_parts = 4
         result = partition_mesh(mesh, n_parts, method="hierarchical")
         result.print_summary()

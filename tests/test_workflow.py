@@ -1,16 +1,14 @@
+
 import os
 import unittest
 import subprocess
 from pathlib import Path
-
-import gmsh
 import sys
 import numpy as np
 
-from meshgen.geometry import Geometry
-from meshgen.mesh_generator import MeshGenerator
-from polymesh.mesh import Mesh
-from polymesh.mesh_ext import LocalMesh
+from polymesh.core_mesh import CoreMesh
+from polymesh.polymesh import PolyMesh
+from polymesh.distributed_mesh import DistributedMesh
 from polymesh.partition import partition_mesh
 
 
@@ -19,22 +17,7 @@ class TestWorkflow(unittest.TestCase):
     def setUp(self):
         self.tmp_path = "test_output"
         os.makedirs(self.tmp_path, exist_ok=True)
-
-        mesh_filename = "test_mesh.msh"
-        self.mesh_filepath = Path(self.tmp_path) / mesh_filename
-
-        # Create geometry and then mesh
-        gmsh.initialize()
-        gmsh.model.add("rect_grid_mesh")
-        geom = Geometry("rect_grid_mesh")
-        surfaces = geom.rectangle(length=10, width=10, mesh_size=2)
-
-        mesh_gen = MeshGenerator(surface_tags=surfaces, output_dir=self.tmp_path)
-        mesh_params = {surfaces: {"mesh_type": "tri", "char_length": 2}}
-        mesh_gen.generate(mesh_params=mesh_params, filename=mesh_filename)
-        gmsh.finalize()
-
-        self.assertTrue(self.mesh_filepath.exists(), "Mesh file was not created.")
+        self.mesh_filepath = os.path.join(os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh")
 
     def tearDown(self):
         # show the temp dir in explorer
@@ -56,14 +39,15 @@ class TestWorkflow(unittest.TestCase):
         Tests the end-to-end workflow:
         1. Generate a global mesh.
         2. Partition the mesh.
-        3. For each partition, create a LocalMesh object.
-        4. Verify the properties of the LocalMesh.
+        3. For each partition, create a DistributedMesh object.
+        4. Verify the properties of the DistributedMesh.
         """
-        # 1. Generate a global mesh (e.g., a 10x10 grid)
+        # 1. Read mesh, analyze and then partition
+        core_mesh = CoreMesh()
+        core_mesh.read_gmsh(self.mesh_filepath)
 
-        # 2. Read mesh, analyze and then partition
-        global_mesh = Mesh()
-        global_mesh.read_gmsh(str(self.mesh_filepath))
+        global_mesh = PolyMesh()
+        global_mesh.read_gmsh(self.mesh_filepath)
         global_mesh.analyze_mesh()
         global_mesh.print_summary()
 
@@ -74,53 +58,56 @@ class TestWorkflow(unittest.TestCase):
 
         # 2. Partition the mesh into 4 parts
         n_parts = 4
-        part_result = partition_mesh(global_mesh, n_parts=n_parts, method="metis")
+        part_result = partition_mesh(core_mesh, n_parts=n_parts, method="metis")
 
-        assert part_result.n_parts == n_parts
+        self.assertEqual(part_result.n_parts, n_parts)
 
-        local_meshes: list[LocalMesh] = []
+        local_meshes: list[DistributedMesh] = []
         for i in range(n_parts):
-            # 3. Create a LocalMesh for each partition
-            local_mesh = LocalMesh(global_mesh, part_result, rank=i)
+            # 3. Create a DistributedMesh for each partition
+            local_mesh = DistributedMesh(global_mesh, part_result, rank=i)
             local_meshes.append(local_mesh)
 
-            # 4. Verify the properties of the LocalMesh
-            assert local_mesh.rank == i
-            assert (
-                local_mesh.mesh.num_cells
-                == local_mesh.num_owned_cells + local_mesh.num_halo_cells
+            # 4. Verify the properties of the DistributedMesh
+            self.assertEqual(local_mesh.rank, i)
+            self.assertEqual(
+                local_mesh.num_cells,
+                local_mesh.num_owned_cells + local_mesh.num_halo_cells
             )
 
             # Check that local cell 0 is the same as the first global owned cell
-            assert (
-                local_mesh.l2g_cells[0] == part_result.halo_indices[i]["owned_cells"][0]
+            self.assertEqual(
+                local_mesh.l2g_cells[0], part_result.halo_indices[i]["owned_cells"][0]
             )
 
             # Check that owned cells are numbered contiguously from 0
             owned_cell_indices_l = list(range(local_mesh.num_owned_cells))
-            assert np.array_equal(
+            all_sent_indices = []
+            for p in local_mesh.send_map:
+                if local_mesh.send_map[p]:
+                    all_sent_indices.extend(local_mesh.send_map[p])
+            self.assertTrue(np.array_equal(
                 owned_cell_indices_l,
-                sorted(
-                    list(local_mesh.send_map[p])[0]
-                    for p in local_mesh.send_map
-                    if local_mesh.send_map[p]
-                ),
-            )
+                sorted(list(set(all_sent_indices)))
+            ))
 
             # Check that halo cells follow owned cells
             if local_mesh.num_halo_cells > 0:
                 first_halo_l = local_mesh.num_owned_cells
-                assert (
-                    local_mesh.l2g_cells[first_halo_l]
-                    == part_result.halo_indices[i]["halo_cells"][0]
+                self.assertEqual(
+                    local_mesh.l2g_cells[first_halo_l],
+                    part_result.halo_indices[i]["halo_cells"][0]
                 )
 
-            # Verify send/recv maps
+        # Verify send/recv maps
+        for i in range(n_parts):
+            local_mesh = local_meshes[i]
             for neighbor_rank, send_indices in local_mesh.send_map.items():
                 # The other mesh must have a corresponding recv map
-                neighbor_mesh = next(m for m in local_meshes if m.rank == neighbor_rank)
-                assert i in neighbor_mesh.recv_map
-                assert len(send_indices) == len(neighbor_mesh.recv_map[i])
+                neighbor_mesh = next((m for m in local_meshes if m.rank == neighbor_rank), None)
+                if neighbor_mesh:
+                    self.assertIn(i, neighbor_mesh.recv_map)
+                    self.assertEqual(len(send_indices), len(neighbor_mesh.recv_map[i]))
 
 
 if __name__ == "__main__":

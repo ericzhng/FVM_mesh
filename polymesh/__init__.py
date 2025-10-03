@@ -1,11 +1,16 @@
-from .mesh import Mesh
-from .partition import PartitionResult, partition_mesh
-from .reorder import renumber_cells, renumber_nodes
+
+from .core_mesh import CoreMesh
+from .polymesh import PolyMesh
+from .distributed_mesh import DistributedMesh
+from .partition import partition_mesh, PartitionResult
+from .reorder import renumber_nodes, renumber_cells
 
 __all__ = [
-    "Mesh",
+    "CoreMesh",
+    "PolyMesh",
+    "DistributedMesh",
     "partition_mesh",
     "PartitionResult",
-    "renumber_cells",
     "renumber_nodes",
+    "renumber_cells",
 ]

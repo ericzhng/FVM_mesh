@@ -10,13 +10,13 @@ try:
 except ImportError:
     metis = None
 
-from polymesh.mesh import Mesh
+from polymesh.core_mesh import CoreMesh
 
 
 class PartitionResult:
     """Holds the result of a mesh partition, providing access to halo data."""
 
-    def __init__(self, mesh: Mesh, parts: np.ndarray):
+    def __init__(self, mesh: CoreMesh, parts: np.ndarray):
         if not mesh._is_analyzed:
             mesh.analyze_mesh()
         self.cell_neighbors = mesh.cell_neighbors
@@ -157,7 +157,7 @@ class PartitionResult:
 
 
 def partition_mesh(
-    mesh: Mesh,
+    mesh: CoreMesh,
     n_parts: int,
     method: str = "metis",
     cell_weights: Optional[np.ndarray] = None,
@@ -190,7 +190,7 @@ def partition_mesh(
     return PartitionResult(mesh, parts)
 
 
-def _get_adjacency(mesh: Mesh) -> List[List[int]]:
+def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
     """Computes the adjacency list for the mesh cells."""
     adjacency: List[List[int]] = []
     for i in range(mesh.num_cells):
@@ -225,7 +225,7 @@ def _partition_with_metis(
 
 
 def _partition_with_hierarchical(
-    mesh: Mesh, n_parts: int, cell_weights: Optional[np.ndarray]
+    mesh: CoreMesh, n_parts: int, cell_weights: Optional[np.ndarray]
 ) -> np.ndarray:
     """Partitions the mesh using a sequential coordinate bisection method."""
     # Check if n_parts is a power of two
