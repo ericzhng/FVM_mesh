@@ -1,4 +1,3 @@
-
 import os
 import unittest
 import subprocess
@@ -8,16 +7,18 @@ import numpy as np
 
 from polymesh.core_mesh import CoreMesh
 from polymesh.polymesh import PolyMesh
-from polymesh.distributed_mesh import DistributedMesh
+from polymesh.local_mesh import LocalMesh
 from polymesh.partition import partition_mesh
 
 
 class TestWorkflow(unittest.TestCase):
 
     def setUp(self):
-        self.tmp_path = "test_output"
+        self.tmp_path = "results/workflow"
         os.makedirs(self.tmp_path, exist_ok=True)
-        self.mesh_filepath = os.path.join(os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh")
+        self.mesh_filepath = os.path.join(
+            os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh"
+        )
 
     def tearDown(self):
         # show the temp dir in explorer
@@ -39,8 +40,8 @@ class TestWorkflow(unittest.TestCase):
         Tests the end-to-end workflow:
         1. Generate a global mesh.
         2. Partition the mesh.
-        3. For each partition, create a DistributedMesh object.
-        4. Verify the properties of the DistributedMesh.
+        3. For each partition, create a LocalMesh object.
+        4. Verify the properties of the LocalMesh.
         """
         # 1. Read mesh, analyze and then partition
         core_mesh = CoreMesh()
@@ -62,17 +63,17 @@ class TestWorkflow(unittest.TestCase):
 
         self.assertEqual(part_result.n_parts, n_parts)
 
-        local_meshes: list[DistributedMesh] = []
+        local_meshes: list[LocalMesh] = []
         for i in range(n_parts):
-            # 3. Create a DistributedMesh for each partition
-            local_mesh = DistributedMesh(global_mesh, part_result, rank=i)
+            # 3. Create a LocalMesh for each partition
+            local_mesh = LocalMesh(global_mesh, part_result, rank=i)
             local_meshes.append(local_mesh)
 
-            # 4. Verify the properties of the DistributedMesh
+            # 4. Verify the properties of the LocalMesh
             self.assertEqual(local_mesh.rank, i)
             self.assertEqual(
                 local_mesh.num_cells,
-                local_mesh.num_owned_cells + local_mesh.num_halo_cells
+                local_mesh.num_owned_cells + local_mesh.num_halo_cells,
             )
 
             # Check that local cell 0 is the same as the first global owned cell
@@ -86,17 +87,18 @@ class TestWorkflow(unittest.TestCase):
             for p in local_mesh.send_map:
                 if local_mesh.send_map[p]:
                     all_sent_indices.extend(local_mesh.send_map[p])
-            self.assertTrue(np.array_equal(
-                owned_cell_indices_l,
-                sorted(list(set(all_sent_indices)))
-            ))
+            self.assertTrue(
+                np.array_equal(
+                    owned_cell_indices_l, sorted(list(set(all_sent_indices)))
+                )
+            )
 
             # Check that halo cells follow owned cells
             if local_mesh.num_halo_cells > 0:
                 first_halo_l = local_mesh.num_owned_cells
                 self.assertEqual(
                     local_mesh.l2g_cells[first_halo_l],
-                    part_result.halo_indices[i]["halo_cells"][0]
+                    part_result.halo_indices[i]["halo_cells"][0],
                 )
 
         # Verify send/recv maps
@@ -104,7 +106,9 @@ class TestWorkflow(unittest.TestCase):
             local_mesh = local_meshes[i]
             for neighbor_rank, send_indices in local_mesh.send_map.items():
                 # The other mesh must have a corresponding recv map
-                neighbor_mesh = next((m for m in local_meshes if m.rank == neighbor_rank), None)
+                neighbor_mesh = next(
+                    (m for m in local_meshes if m.rank == neighbor_rank), None
+                )
                 if neighbor_mesh:
                     self.assertIn(i, neighbor_mesh.recv_map)
                     self.assertEqual(len(send_indices), len(neighbor_mesh.recv_map[i]))
