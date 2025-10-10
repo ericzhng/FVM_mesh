@@ -1,7 +1,5 @@
 import numpy as np
-from typing import Dict, List, Any
-
-import gmsh
+from typing import List
 
 from .core_mesh import CoreMesh
 
@@ -9,10 +7,11 @@ from .core_mesh import CoreMesh
 class PolyMesh(CoreMesh):
     """Represents a polygonal mesh with derived geometric information."""
 
-    def __init__(self, msh_file: str = "", gmsh_verbose: int = 0):
+    def __init__(self):
         super().__init__()
-        if msh_file:
-            self.read_gmsh(msh_file, gmsh_verbose)
+
+        # Analysis flag
+        self._is_analyzed: bool = False
 
         # computed fields
         self.cell_centroids: np.ndarray = np.array([])
@@ -29,8 +28,13 @@ class PolyMesh(CoreMesh):
         self.cell_aspect_ratio_values: np.ndarray = np.array([])
         self.connectivity_issues: List[str] = []
 
-        # Analysis flag
-        self._is_analyzed: bool = False
+    @classmethod
+    def from_gmsh(cls, msh_file: str, gmsh_verbose: int = 0) -> "PolyMesh":
+        """Create a PolyMesh instance by reading a Gmsh .msh file."""
+        mesh = cls()
+        if msh_file:
+            mesh.read_gmsh(msh_file, gmsh_verbose)
+        return mesh
 
     def analyze_mesh(self) -> None:
         """Compute centroids, faces, neighbors, face areas/normals, and cell volumes."""
@@ -38,11 +42,12 @@ class PolyMesh(CoreMesh):
             raise RuntimeError(
                 "No cells available. Call read_gmsh or populate cells first"
             )
+        self.compute_centroids()
+        self.extract_neighbors()
+
         self._extract_cell_faces()
-        self._compute_centroids()
         self._compute_face_midpoints_areas_normals()
         self._compute_cell_volumes()
-        self._read_gmsh_boundary_groups()
         self._is_analyzed = True  # Set flag after successful analysis
 
     def _extract_cell_faces(self) -> None:
@@ -79,11 +84,6 @@ class PolyMesh(CoreMesh):
             else:
                 faces = []
             self.cell_faces.append(faces)
-
-    def _compute_centroids(self) -> None:
-        self.cell_centroids = np.array(
-            [np.mean(self.node_coords[c], axis=0) for c in self.cell_connectivity]
-        )
 
     def _compute_face_midpoints_areas_normals(self) -> None:
         if self.cell_neighbors.size == 0:
@@ -177,32 +177,3 @@ class PolyMesh(CoreMesh):
             )
 
         print("\n" + "=" * 80)
-
-    def plot(self, filepath: str = "mesh_plot.png", parts: np.ndarray | None = None):
-        """
-        Plots the generated mesh with cell and node labels.
-        If 'parts' is provided, cells are colored by partition. Otherwise, they are
-        colored by cell type.
-        """
-        if self.dimension != 2:
-            print("Plotting is currently supported only for 2D meshes.")
-            return
-
-        import matplotlib.pyplot as plt
-        from common.utility import plot_mesh
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-
-        plot_mesh(
-            ax,
-            self.node_coords[:, :2],
-            self.cell_connectivity,
-            show_nodes=True,
-            show_cells=True,
-            parts=parts,
-            title="Generated Mesh with Labels",
-        )
-
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        plt.close()
-        print(f"Mesh plot saved to: {filepath}")

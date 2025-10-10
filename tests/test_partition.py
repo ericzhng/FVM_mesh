@@ -4,11 +4,14 @@ import unittest
 import numpy as np
 
 from polymesh.core_mesh import CoreMesh
+from polymesh.partition import partition_mesh, print_partition_summary
 
 
 def make_test_mesh():
     """Creates a test mesh from a file."""
-    msh_file = os.path.join(os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh")
+    msh_file = os.path.join(
+        os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh"
+    )
     mesh = CoreMesh()
     mesh.read_gmsh(msh_file)
     return mesh
@@ -24,47 +27,27 @@ class TestPartitionMesh(unittest.TestCase):
         """Test METIS partitioning."""
         mesh = make_test_mesh()
         n_parts = 4
-        result = partition_mesh(mesh, n_parts, method="metis")
-        result.print_summary()
-        self.assertEqual(result.parts.shape[0], mesh.num_cells)
-        self.assertEqual(len(np.unique(result.parts)), n_parts)
+        parts = partition_mesh(mesh, n_parts, method="metis")
+        self.assertEqual(parts.shape[0], mesh.num_cells)
+        self.assertEqual(len(np.unique(parts)), n_parts)
         mesh.plot(
             os.path.join(self.tmp_path, "mesh_partition_metis.png"),
-            parts=result.parts,
+            parts=parts,
         )
-
-        halo_indices = result.halo_indices
-        self.assertIsInstance(halo_indices, dict)
-        self.assertEqual(len(halo_indices), n_parts)
-
-        for rank in range(n_parts):
-            self.assertIn(rank, halo_indices)
-            self.assertIn("owned_cells", halo_indices[rank])
-            self.assertIn("send", halo_indices[rank])
-            self.assertIn("recv", halo_indices[rank])
+        print_partition_summary(parts)
 
     def test_hierarchical_partitioning(self):
         """Test hierarchical partitioning."""
         mesh = make_test_mesh()
         n_parts = 4
-        result = partition_mesh(mesh, n_parts, method="hierarchical")
-        result.print_summary()
-        self.assertEqual(result.parts.shape[0], mesh.num_cells)
-        self.assertEqual(len(np.unique(result.parts)), n_parts)
+        parts = partition_mesh(mesh, n_parts, method="hierarchical")
+        self.assertEqual(parts.shape[0], mesh.num_cells)
+        self.assertEqual(len(np.unique(parts)), n_parts)
         mesh.plot(
             os.path.join(self.tmp_path, "mesh_partition_hierarchical.png"),
-            parts=result.parts,
+            parts=parts,
         )
-
-        halo_indices = result.halo_indices
-        self.assertIsInstance(halo_indices, dict)
-        self.assertEqual(len(halo_indices), n_parts)
-
-        for rank in range(n_parts):
-            self.assertIn(rank, halo_indices)
-            self.assertIn("owned_cells", halo_indices[rank])
-            self.assertIn("send", halo_indices[rank])
-            self.assertIn("recv", halo_indices[rank])
+        print_partition_summary(parts)
 
 
 if __name__ == "__main__":

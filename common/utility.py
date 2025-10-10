@@ -54,7 +54,7 @@ def plot_mesh(
     if parts is not None:
         unique_parts = np.unique(parts)
         num_parts = len(unique_parts)
-        cmap = plt.cm.get_cmap("viridis", num_parts)
+        cmap = plt.cm.get_cmap("tab20", num_parts)
         part_min = unique_parts.min()
         part_range = (unique_parts.max() - part_min) if num_parts > 1 else 1
 

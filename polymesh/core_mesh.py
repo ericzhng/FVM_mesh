@@ -1,5 +1,5 @@
-import os
-from typing import Dict, List, Optional, Tuple, Any
+# -*- coding: utf-8 -*-
+from typing import Dict, List, Tuple, Any
 
 import gmsh
 import numpy as np
@@ -17,9 +17,12 @@ class CoreMesh:
         # geometry/connectivity
         self.node_coords: np.ndarray = np.array([])  # (N,3)
         self.cell_connectivity: List[List[int]] = []
-        self.cell_neighbors: np.ndarray = np.array([])
         self.cell_type_ids: np.ndarray = np.array([])
         self.cell_type_map: Dict[int, Dict[str, Any]] = {}
+
+        # derived info for adjacency
+        self.cell_neighbors: np.ndarray = np.array([])
+        self.cell_centroids: np.ndarray = np.array([])
 
         # boundary info
         self.boundary_faces_nodes: np.ndarray = np.array([])  # (M, n_face_nodes)
@@ -85,6 +88,8 @@ class CoreMesh:
                 self.cell_type_ids = np.array(all_type_ids, dtype=int)
                 self.num_cells = len(self.cell_connectivity)
 
+            self._read_gmsh_boundary_groups()
+
         finally:
             gmsh.finalize()
 
@@ -134,7 +139,7 @@ class CoreMesh:
                 self.boundary_faces_nodes = np.vstack(all_faces)
                 self.boundary_faces_tags = np.array(all_tags, dtype=int)
 
-    def extract_neighbors(self) -> np.ndarray:
+    def extract_neighbors(self) -> None:
         # face templates for common element node counts (3D); 2D handled generically
         face_templates = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # tet
@@ -170,7 +175,8 @@ class CoreMesh:
             cell_faces.append(faces)
 
         if not cell_faces:
-            neighbors = np.array([])
+            self.cell_neighbors = np.array([])
+            return
 
         max_faces = max(len(f) for f in cell_faces)
         num = self.num_cells
@@ -189,4 +195,38 @@ class CoreMesh:
                 else:
                     neighbors[ci, fi] = -1
 
-        return neighbors
+        self.cell_neighbors = neighbors
+
+    def compute_centroids(self) -> None:
+        self.cell_centroids = np.array(
+            [np.mean(self.node_coords[c], axis=0) for c in self.cell_connectivity]
+        )
+
+    def plot(self, filepath: str = "mesh_plot.png", parts: np.ndarray | None = None):
+        """
+        Plots the generated mesh with cell and node labels.
+        If 'parts' is provided, cells are colored by partition. Otherwise, they are
+        colored by cell type.
+        """
+        if self.dimension != 2:
+            print("Plotting is currently supported only for 2D meshes.")
+            return
+
+        import matplotlib.pyplot as plt
+        from common.utility import plot_mesh
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        plot_mesh(
+            ax,
+            self.node_coords[:, :2],
+            self.cell_connectivity,
+            show_nodes=True,
+            show_cells=True,
+            parts=parts,
+            title="Mesh Plot",
+        )
+
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"Mesh plot saved to: {filepath}")
