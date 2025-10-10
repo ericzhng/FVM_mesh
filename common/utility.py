@@ -162,19 +162,33 @@ def plot_mesh(
     if parts is not None and part_colors is not None:
         unique_parts = np.unique(parts)
         for part_id in unique_parts:
+            num_cells_in_part = np.sum(parts == part_id)
             legend_handles.append(
                 Rectangle(
                     (0, 0),
                     1,
                     1,
                     color=part_colors[part_id],
-                    label=f"Part {part_id}",
+                    label=f"Part {part_id} (#{num_cells_in_part})",
                 )
             )
     else:
         # Create legend from ELEMENT_COLORS
+        cell_counts = {}
+        for cell in cells:
+            n_sides = len(cell)
+            if n_sides in ELEMENT_COLORS:
+                label = ELEMENT_COLORS[n_sides][1]
+            else:
+                label = ELEMENT_COLORS["other"][1]
+            cell_counts[label] = cell_counts.get(label, 0) + 1
+
         for color, label in ELEMENT_COLORS.values():
-            legend_handles.append(Rectangle((0, 0), 1, 1, color=color, label=label))
+            count = cell_counts.get(label, 0)
+            if count > 0:
+                legend_handles.append(
+                    Rectangle((0, 0), 1, 1, color=color, label=f"{label} (#{count})")
+                )
 
     ax.legend(
         handles=legend_handles,

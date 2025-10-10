@@ -1,7 +1,8 @@
 import numpy as np
-from typing import List
+from typing import Dict, List, Tuple
 
 from .core_mesh import CoreMesh
+from .quality import MeshQuality
 
 
 class PolyMesh(CoreMesh):
@@ -22,11 +23,7 @@ class PolyMesh(CoreMesh):
         self.face_areas: np.ndarray = np.array([])
 
         # Quality metrics
-        self.min_max_volume_ratio: float = 0.0
-        self.cell_skewness_values: np.ndarray = np.array([])
-        self.cell_non_orthogonality_values: np.ndarray = np.array([])
-        self.cell_aspect_ratio_values: np.ndarray = np.array([])
-        self.connectivity_issues: List[str] = []
+        self.quality = MeshQuality()
 
     @classmethod
     def from_gmsh(cls, msh_file: str, gmsh_verbose: int = 0) -> "PolyMesh":
@@ -164,10 +161,36 @@ class PolyMesh(CoreMesh):
         print(f"  {'Number of Nodes:' :<25} {self.num_nodes}")
         print(f"  {'Number of Cells:' :<25} {self.num_cells}")
 
+        # --- Geometric Properties ---
+        if self.num_nodes > 0:
+            x_min, y_min, z_min = np.min(self.node_coords, axis=0)
+            x_max, y_max, z_max = np.max(self.node_coords, axis=0)
+            print(f"\n{'--- Geometric Properties ---':^80}\n")
+            print(f"  {'X Range:':<25} {x_min:.4f} to {x_max:.4f}")
+            print(f"  {'Y Range:':<25} {y_min:.4f} to {y_max:.4f}")
+            if self.dimension == 3:
+                print(f"  {'Z Range:':<25} {z_min:.4f} to {z_max:.4f}")
+
         # --- Cell Geometry ---
         if self.cell_volumes.size > 0:
             print(f"\n{'--- Cell Geometry ---':^80}\n")
-            print(f"  {'Metric':<20} {'Min':>15} {'Max':>15} {'Average':>15}")
+
+            # Cell Type Information
+            cell_type_counts = {}
+            for conn in self.cell_connectivity:
+                n_sides = len(conn)
+                label = f"{n_sides}-gon"
+                if n_sides == 3:
+                    label = "Triangle"
+                elif n_sides == 4:
+                    label = "Quadrilateral"
+                cell_type_counts[label] = cell_type_counts.get(label, 0) + 1
+
+            print("  Cell Type Distribution:")
+            for label, count in cell_type_counts.items():
+                print(f"    - {label+':':<20} {count}")
+
+            print(f"\n  {'Metric':<20} {'Min':>15} {'Max':>15} {'Average':>15}")
             print(f"  {'-'*19} {'-'*15} {'-'*15} {'-'*15}")
             vol_min = np.min(self.cell_volumes)
             vol_max = np.max(self.cell_volumes)
@@ -176,4 +199,11 @@ class PolyMesh(CoreMesh):
                 f"  {'Cell Volume':<20} {vol_min:>15.4e} {vol_max:>15.4e} {vol_avg:>15.4e}"
             )
 
+        self.compute_quality()
+        self.quality.print_summary()
+
         print("\n" + "=" * 80)
+
+    def compute_quality(self) -> None:
+        """Computes mesh quality metrics."""
+        self.quality.compute(self)

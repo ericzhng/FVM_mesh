@@ -1,4 +1,5 @@
-from typing import Dict, List, Set
+import copy
+from typing import Dict, List, Set, Sequence
 
 import numpy as np
 
@@ -7,14 +8,56 @@ from .core_mesh import CoreMesh
 from .partition import partition_mesh, print_partition_summary
 
 
+def _find_send_candidates(
+    mesh: CoreMesh, parts: np.ndarray
+) -> Dict[int, Dict[int, List[int]]]:
+    """
+    Determines which cells each partition needs to send to its neighbors.
+
+    This is the first step in building the halo communication maps. It iterates
+    through all cell-neighbor pairs in the global mesh. If a pair crosses a
+    partition boundary, the owner cell is marked as a "send candidate" to the
+    neighbor's partition.
+
+    Args:
+        mesh: The global mesh object.
+        parts: An array mapping each global cell ID to its partition ID (rank).
+
+    Returns:
+        A dictionary where keys are partition ranks. Each value is another
+        dictionary mapping a neighbor rank to a sorted list of global cell IDs
+        to be sent from the key rank to the neighbor rank.
+    """
+    n_parts = int(np.max(parts) + 1) if parts.size > 0 else 0
+    send_candidates: Dict[int, Dict[int, Set[int]]] = {r: {} for r in range(n_parts)}
+
+    for g_idx, neighbors in enumerate(mesh.cell_neighbors):
+        owner_part = parts[g_idx]
+        for neighbor_g_idx in neighbors:
+            if neighbor_g_idx != -1:
+                neighbor_part = parts[neighbor_g_idx]
+                if owner_part != neighbor_part:
+                    send_candidates[owner_part].setdefault(
+                        int(neighbor_part), set()
+                    ).add(g_idx)
+
+    # Sort the sets for deterministic ordering
+    global_send_map: Dict[int, Dict[int, List[int]]] = {r: {} for r in range(n_parts)}
+    for rank, send_dict in send_candidates.items():
+        for neighbor_rank, g_indices_set in send_dict.items():
+            global_send_map[rank][neighbor_rank] = sorted(list(g_indices_set))
+
+    return global_send_map
+
+
 def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
     """
     Builds communication maps for halo exchange between partitions.
 
     This method creates a set of mappings for each partition (rank) that
-    enables efficient, index-based halo data exchange using MPI. It avoids
-    costly searches by pre-calculating the local indices for sending owned
-    cells and receiving halo cells.
+    enables efficient, index-based halo data exchange. It avoids costly
+    searches by pre-calculating the local indices for sending owned cells
+    and receiving halo cells.
 
     The output structure for each rank includes:
     - 'owned_cells': A list of global cell IDs owned by this rank.
@@ -29,7 +72,6 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
     """
     n_parts = int(np.max(parts) + 1) if parts.size > 0 else 0
     if n_parts <= 1:
-        # Return a structure indicating no halo for rank 0
         if mesh.num_cells > 0:
             return {
                 0: {
@@ -41,37 +83,25 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
             }
         return {}
 
-    # 1. Globally determine which cells are sent between which partitions.
-    send_candidates: Dict[int, Dict[int, Set[int]]] = {r: {} for r in range(n_parts)}
-    for g_idx, neighbors in enumerate(mesh.cell_neighbors):
-        owner_part = parts[g_idx]
-        for neighbor_g_idx in neighbors:
-            if neighbor_g_idx != -1:
-                neighbor_part = parts[neighbor_g_idx]
-                if owner_part != neighbor_part:
-                    send_candidates[owner_part].setdefault(
-                        int(neighbor_part), set()
-                    ).add(g_idx)
+    global_send_map = _find_send_candidates(mesh, parts)
 
-    global_send_map: Dict[int, Dict[int, List[int]]] = {r: {} for r in range(n_parts)}
-    for rank, send_dict in send_candidates.items():
-        for neighbor_rank, g_indices_set in send_dict.items():
-            global_send_map[rank][neighbor_rank] = sorted(list(g_indices_set))
-
-    # 2. For each partition, build the final local index-based maps.
+    # For each partition, build the final local index-based maps.
     out: Dict[int, Dict] = {}
     for rank in range(n_parts):
+        # 1. Identify owned and halo cells for the current rank
         owned_cells_g = np.where(parts == rank)[0]
         g2l_owned_map = {g: l for l, g in enumerate(owned_cells_g)}
 
         halo_cells_g: List[int] = []
         halo_from_neighbors_g: Dict[int, List[int]] = {}
 
+        # Collect all neighbors that this rank interacts with (sends to or receives from)
         all_neighbors = set(global_send_map.get(rank, {}).keys())
         for r, send_map in global_send_map.items():
             if rank in send_map:
                 all_neighbors.add(r)
 
+        # Determine which cells this rank needs to receive from its neighbors
         for neighbor_rank in sorted(list(all_neighbors)):
             cells_to_recv = global_send_map.get(neighbor_rank, {}).get(rank)
             if cells_to_recv:
@@ -80,6 +110,7 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
 
         g2l_halo_map = {g: l for l, g in enumerate(halo_cells_g)}
 
+        # 2. Create local index maps for sending and receiving
         send_map_local: Dict[int, List[int]] = {}
         my_sends_g = global_send_map.get(rank, {})
         for neighbor_rank, g_indices_to_send in my_sends_g.items():
@@ -101,9 +132,9 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
     return out
 
 
-class DistributedMesh(PolyMesh):
+class LocalMesh(PolyMesh):
     """
-    Represents the mesh for a single partition (process) in a distributed mesh setup.
+    Represents the mesh for a single partition in a distributed setup.
 
     This class holds the subset of the mesh relevant to one partition, including
     both the cells it owns and the halo cells it needs for communication. All
@@ -122,7 +153,7 @@ class DistributedMesh(PolyMesh):
         recv_map (Dict[int, List[int]]): Communication map for receiving data.
     """
 
-    def __init__(self, global_mesh: PolyMesh, parts: np.ndarray, rank: int):
+    def __init__(self, global_mesh: CoreMesh, parts: np.ndarray, rank: int):
         """
         Constructs a LocalMesh for a specific partition.
 
@@ -133,77 +164,105 @@ class DistributedMesh(PolyMesh):
         """
         super().__init__()
         self.rank = rank
-        if not global_mesh._is_analyzed:
-            global_mesh.analyze_mesh()
+        if not global_mesh.cell_neighbors.size > 0:
+            global_mesh.extract_neighbors()
 
+        # 1. Determine halo and communication patterns from the global mesh
         halo_indices = _compute_halo_indices(global_mesh, parts)
         halo_info = halo_indices[rank]
+
+        # 2. Set up local cell mappings (owned first, then halo)
+        self._initialize_cell_maps(halo_info)
+
+        # 3. Identify required nodes and set up local node mappings
+        self._initialize_node_maps(global_mesh)
+
+        # 4. Build the local mesh structure (nodes and connectivity)
+        self._build_local_mesh_data(global_mesh)
+
+        self.plot(filepath=f"local_mesh_rank{rank}.png")
+
+        # 5. Analyze the newly created local mesh to build faces, volumes, etc.
+        self.analyze_mesh()
+
+        # 6. Remap cell neighbors to use local indices
+        self._remap_neighbors(global_mesh)
+
+        # 7. Store communication maps for halo exchange
+        self.send_map = halo_info["send"]
+        self.recv_map = halo_info["recv"]
+
+    def _initialize_cell_maps(self, halo_info: Dict):
+        """Initializes local-global cell mappings."""
         owned_cells_g = halo_info["owned_cells"]
         halo_cells_g = halo_info["halo_cells"]
-
         self.num_owned_cells = len(owned_cells_g)
         self.num_halo_cells = len(halo_cells_g)
-
-        # 1. Create local numbering for cells (owned first, then halo)
         self.l2g_cells = np.array(owned_cells_g + halo_cells_g, dtype=int)
         self.g2l_cells = {g: l for l, g in enumerate(self.l2g_cells)}
 
-        # 2. Identify all unique nodes required for the local cells
-        local_cell_nodes_g = global_mesh.cell_connectivity[self.l2g_cells]
+    def _initialize_node_maps(self, global_mesh: CoreMesh):
+        """Identifies required nodes and creates local-global node mappings."""
+        local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in self.l2g_cells]
         unique_node_g_indices = np.unique(np.concatenate(local_cell_nodes_g))
         self.l2g_nodes = unique_node_g_indices
         self.g2l_nodes = {g: l for l, g in enumerate(self.l2g_nodes)}
 
-        # 3. Create new, locally indexed mesh data
+    def _build_local_mesh_data(self, global_mesh: CoreMesh):
+        """Creates the local node coordinates and cell connectivity."""
         self.node_coords = global_mesh.node_coords[self.l2g_nodes]
+        local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in self.l2g_cells]
         self.cell_connectivity = self._remap_connectivity(
             local_cell_nodes_g, self.g2l_nodes
         )
+        self.dimension = global_mesh.dimension
+        self.cell_type_map = copy.deepcopy(global_mesh.cell_type_map)
+        if global_mesh.cell_type_ids.size > 0:
+            self.cell_type_ids = global_mesh.cell_type_ids[self.l2g_cells]
+        else:
+            self.cell_type_ids = np.array([])
 
-        # 4. Analyze the new local mesh
-        self.analyze_mesh()  # Analyze to build faces, neighbors, etc.
-
-        # 5. Remap cell neighbors to local indices
-        self._remap_cell_neighbors(global_mesh)
-
-        # 6. Store communication maps
-        self.send_map = halo_info["send"]
-        self.recv_map = halo_info["recv"]
+        self.num_cells = len(self.cell_connectivity)
+        self.num_nodes = self.node_coords.shape[0]
 
     def _remap_connectivity(
-        self, global_conn: List[np.ndarray], g2l_map: Dict[int, int]
-    ) -> List[np.ndarray]:
-        """Remaps a global connectivity list to a local one."""
+        self, global_conn: Sequence[np.ndarray], g2l_map: Dict[int, int]
+    ) -> List[List[int]]:
+        """Remaps a global connectivity sequence to a local one."""
         local_conn = []
         for item_conn_g in global_conn:
-            local_conn.append(np.array([g2l_map[g] for g in item_conn_g], dtype=int))
+            local_conn.append([g2l_map[g] for g in item_conn_g])
         return local_conn
 
-    def _remap_cell_neighbors(self, global_mesh: PolyMesh):
+    def _remap_neighbors(self, global_mesh: CoreMesh):
         """Remaps the cell_neighbors array to use local cell indices."""
+        # This assumes self.cell_neighbors has been allocated by analyze_mesh()
         for l_idx, g_idx in enumerate(self.l2g_cells):
             local_neighbors = []
-            # Ensure the global_mesh.cell_neighbors has been computed
             if g_idx < len(global_mesh.cell_neighbors):
                 for neighbor_g in global_mesh.cell_neighbors[g_idx]:
                     if neighbor_g in self.g2l_cells:
                         local_neighbors.append(self.g2l_cells[neighbor_g])
                     else:
                         local_neighbors.append(-1)  # Boundary face
-            # Ensure the cell_neighbors array for the local mesh is initialized correctly
-            if l_idx < len(self.cell_neighbors):
-                self.cell_neighbors[l_idx] = np.array(local_neighbors, dtype=int)
+
+            # Ensure the row in cell_neighbors is correctly sized and assigned
+            if l_idx < self.cell_neighbors.shape[0]:
+                # Pad with -1 if necessary
+                padded_neighbors = np.full(self.cell_neighbors.shape[1], -1, dtype=int)
+                padded_neighbors[: len(local_neighbors)] = local_neighbors
+                self.cell_neighbors[l_idx] = padded_neighbors
 
 
-def create_distributed_meshes(
-    global_mesh: PolyMesh, n_parts: int, partition_method: str = "metis"
-) -> List["DistributedMesh"]:
+def create_local_meshes(
+    global_mesh: CoreMesh, n_parts: int, partition_method: str = "metis"
+) -> List["LocalMesh"]:
     """
-    Partitions a global mesh and creates a list of distributed mesh objects.
+    Partitions a global mesh and creates a list of local mesh objects.
 
     This function orchestrates the mesh distribution process:
     1. Partitions the global mesh into the specified number of parts.
-    2. For each partition, constructs a `DistributedMesh` object containing
+    2. For each partition, constructs a `LocalMesh` object containing
        only the data relevant to that partition (owned cells, halo cells,
        and local connectivity).
 
@@ -213,20 +272,20 @@ def create_distributed_meshes(
         partition_method: The algorithm to use for partitioning ('metis' or 'hierarchical').
 
     Returns:
-        A list of DistributedMesh objects, one for each partition.
+        A list of LocalMesh objects, one for each partition.
     """
-    if not global_mesh._is_analyzed:
-        global_mesh.analyze_mesh()
+    if not global_mesh.cell_neighbors.size > 0:
+        global_mesh.extract_neighbors()
 
     # 1. Partition the global mesh
     parts = partition_mesh(global_mesh, n_parts, method=partition_method)
     print_partition_summary(parts)
 
-    # 2. Create a DistributedMesh for each partition
+    # 2. Create a LocalMesh for each partition
     local_meshes = []
     if n_parts > 0:
         for rank in range(n_parts):
-            local_mesh = DistributedMesh(global_mesh, parts, rank)
+            local_mesh = LocalMesh(global_mesh, parts, rank)
             local_meshes.append(local_mesh)
 
     return local_meshes
