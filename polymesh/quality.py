@@ -1,13 +1,31 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 from typing import Dict, List, Tuple
 
 
 class MeshQuality:
     """
-    A data structure to store and compute mesh quality metrics.
+    Computes and stores mesh quality metrics for a PolyMesh object.
+
+    This class calculates various metrics to assess the quality of a mesh,
+    which is crucial for the stability and accuracy of numerical simulations.
+    Metrics include geometric properties like volume ratios, skewness, and
+    aspect ratio, as well as topological checks for connectivity issues.
+
+    Attributes:
+        min_max_volume_ratio (float): Ratio of the smallest cell volume to the
+            largest cell volume in the mesh.
+        cell_skewness_values (np.ndarray): An array of skewness values for each cell.
+        cell_non_orthogonality_values (np.ndarray): An array of non-orthogonality
+            values (in degrees) for each cell.
+        cell_aspect_ratio_values (np.ndarray): An array of aspect ratio values for
+            each cell.
+        connectivity_issues (List[str]): A list of strings describing any
+            topological issues found in the mesh (e.g., unreferenced nodes).
     """
 
     def __init__(self):
+        """Initializes the MeshQuality instance with default values."""
         self.min_max_volume_ratio: float = 0.0
         self.cell_skewness_values: np.ndarray = np.array([])
         self.cell_non_orthogonality_values: np.ndarray = np.array([])
@@ -15,200 +33,170 @@ class MeshQuality:
         self.connectivity_issues: List[str] = []
         self._is_computed = False
 
-    def compute(self, mesh):
+    def compute(self, mesh) -> None:
         """
-        Computes mesh quality metrics from a PolyMesh object.
+        Compute all mesh quality metrics from a PolyMesh object.
+
+        Args:
+            mesh (PolyMesh): The mesh object to be analyzed.
         """
         if not mesh._is_analyzed:
             raise RuntimeError("Mesh must be analyzed before computing quality.")
 
-        # Initialize quality metrics
-        self.min_max_volume_ratio = 0.0
-        self.cell_skewness_values = np.zeros(mesh.num_cells)
-        self.cell_non_orthogonality_values = np.zeros(mesh.num_cells)
-        self.cell_aspect_ratio_values = np.zeros(mesh.num_cells)
-        self.connectivity_issues = []
+        self._initialize_metrics(mesh.num_cells)
 
         if mesh.num_cells == 0:
             return
 
-        # 1. Ratio of smallest to biggest cell volume
+        self._compute_volume_ratio(mesh)
+        self._compute_geometric_metrics(mesh)
+        self._check_connectivity(mesh)
+
+        self._is_computed = True
+
+    def _initialize_metrics(self, num_cells: int) -> None:
+        """Reset all metric attributes to their initial state."""
+        self.min_max_volume_ratio = 0.0
+        self.cell_skewness_values = np.zeros(num_cells)
+        self.cell_non_orthogonality_values = np.zeros(num_cells)
+        self.cell_aspect_ratio_values = np.zeros(num_cells)
+        self.connectivity_issues = []
+        self._is_computed = False
+
+    def _compute_volume_ratio(self, mesh) -> None:
+        """Calculate the ratio of the smallest to the largest cell volume."""
         min_volume = np.min(mesh.cell_volumes)
         max_volume = np.max(mesh.cell_volumes)
-        if max_volume > 0:
-            self.min_max_volume_ratio = min_volume / max_volume
-        else:
-            self.min_max_volume_ratio = 0.0
+        self.min_max_volume_ratio = min_volume / max_volume if max_volume > 1e-12 else 0.0
 
-        # Ensure cell_faces is populated for non-orthogonality and aspect ratio
-        if not mesh.cell_faces:
-            mesh._extract_cell_faces()  # Re-extract if not already done
+    def _compute_geometric_metrics(self, mesh) -> None:
+        """
+        Compute cell-based geometric metrics like skewness, aspect ratio,
+        and non-orthogonality.
+        """
+        if mesh.dimension != 2:
+            # Currently, these metrics are implemented only for 2D meshes.
+            return
 
-        # 2. Skewness, Non-Orthogonality, and Aspect Ratio (2D only for now)
-        if mesh.dimension == 2:
-            for i, conn in enumerate(mesh.cell_connectivity):
-                nodes = mesh.node_coords[conn][:, :2]
-                num_nodes_in_cell = len(nodes)
+        for i, conn in enumerate(mesh.cell_connectivity):
+            nodes = mesh.node_coords[conn][:, :2]
+            num_nodes = len(nodes)
 
-                # Skewness (angle-based)
-                if num_nodes_in_cell == 3:  # Triangle
-                    v0 = nodes[1] - nodes[0]
-                    v1 = nodes[2] - nodes[1]
-                    v2 = nodes[0] - nodes[2]
-                    l0 = np.linalg.norm(v0)
-                    l1 = np.linalg.norm(v1)
-                    l2 = np.linalg.norm(v2)
+            if num_nodes == 3:  # Triangle
+                self._compute_triangle_metrics(i, nodes)
+            elif num_nodes == 4:  # Quadrilateral
+                self._compute_quad_metrics(i, nodes)
 
-                    if l0 > 0 and l1 > 0 and l2 > 0:
-                        angle0 = np.degrees(np.arccos(np.dot(-v2, v0) / (l2 * l0)))
-                        angle1 = np.degrees(np.arccos(np.dot(-v0, v1) / (l0 * l1)))
-                        angle2 = np.degrees(np.arccos(np.dot(-v1, v2) / (l1 * l2)))
-                        angles = np.array([angle0, angle1, angle2])
-                        self.cell_skewness_values[i] = np.max(np.abs(angles - 60)) / 60
-                    else:
-                        self.cell_skewness_values[i] = 1.0  # Degenerate triangle
+        self._compute_non_orthogonality(mesh)
 
-                    # Aspect Ratio (longest edge / shortest edge)
-                    edge_lengths = np.array([l0, l1, l2])
-                    if np.min(edge_lengths) > 0:
-                        self.cell_aspect_ratio_values[i] = np.max(
-                            edge_lengths
-                        ) / np.min(edge_lengths)
-                    else:
-                        self.cell_aspect_ratio_values[i] = np.inf  # Degenerate
+    def _compute_triangle_metrics(self, index: int, nodes: np.ndarray) -> None:
+        """Compute skewness and aspect ratio for a single triangular cell."""
+        # Edge vectors and lengths
+        v0 = nodes[1] - nodes[0]
+        v1 = nodes[2] - nodes[1]
+        v2 = nodes[0] - nodes[2]
+        lengths = np.array([np.linalg.norm(v) for v in [v0, v1, v2]])
 
-                elif num_nodes_in_cell == 4:  # Quadrilateral
-                    # Skewness (angle-based)
-                    angles = []
-                    for j in range(num_nodes_in_cell):
-                        p_prev = nodes[(j - 1 + num_nodes_in_cell) % num_nodes_in_cell]
-                        p_curr = nodes[j]
-                        p_next = nodes[(j + 1) % num_nodes_in_cell]
+        if np.min(lengths) < 1e-12:
+            self.cell_skewness_values[index] = 1.0  # Degenerate
+            self.cell_aspect_ratio_values[index] = np.inf
+            return
 
-                        v1 = p_prev - p_curr
-                        v2 = p_next - p_curr
+        # Angle-based skewness
+        angles = np.degrees([
+            np.arccos(np.dot(-v2, v0) / (lengths[2] * lengths[0])),
+            np.arccos(np.dot(-v0, v1) / (lengths[0] * lengths[1])),
+            np.arccos(np.dot(-v1, v2) / (lengths[1] * lengths[2]))
+        ])
+        self.cell_skewness_values[index] = np.max(np.abs(angles - 60.0)) / 60.0
 
-                        l1 = np.linalg.norm(v1)
-                        l2 = np.linalg.norm(v2)
+        # Aspect ratio
+        self.cell_aspect_ratio_values[index] = np.max(lengths) / np.min(lengths)
 
-                        if l1 > 0 and l2 > 0:
-                            dot_product = np.dot(v1, v2)
-                            angle = np.degrees(
-                                np.arccos(np.clip(dot_product / (l1 * l2), -1.0, 1.0))
-                            )
-                            angles.append(angle)
-                        else:
-                            angles.append(180.0)  # Degenerate edge
+    def _compute_quad_metrics(self, index: int, nodes: np.ndarray) -> None:
+        """Compute skewness and aspect ratio for a single quadrilateral cell."""
+        # Edge lengths
+        edge_lengths = np.array([
+            np.linalg.norm(nodes[j] - nodes[(j + 1) % 4]) for j in range(4)
+        ])
 
-                    if angles:
-                        self.cell_skewness_values[i] = (
-                            np.max(np.abs(np.array(angles) - 90)) / 90
-                        )
-                    else:
-                        self.cell_skewness_values[i] = 1.0  # Degenerate quad
+        if np.min(edge_lengths) < 1e-12:
+            self.cell_skewness_values[index] = 1.0  # Degenerate
+            self.cell_aspect_ratio_values[index] = np.inf
+            return
 
-                    # Aspect Ratio (longest edge / shortest edge)
-                    edge_lengths = []
-                    for j in range(num_nodes_in_cell):
-                        edge_lengths.append(
-                            np.linalg.norm(
-                                nodes[j] - nodes[(j + 1) % num_nodes_in_cell]
-                            )
-                        )
-                    edge_lengths = np.array(edge_lengths)
-                    if np.min(edge_lengths) > 0:
-                        self.cell_aspect_ratio_values[i] = np.max(
-                            edge_lengths
-                        ) / np.min(edge_lengths)
-                    else:
-                        self.cell_aspect_ratio_values[i] = np.inf  # Degenerate
+        # Angle-based skewness
+        angles = []
+        for j in range(4):
+            v1 = nodes[(j - 1 + 4) % 4] - nodes[j]
+            v2 = nodes[(j + 1) % 4] - nodes[j]
+            dot_p = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+            angles.append(np.degrees(np.arccos(np.clip(dot_p, -1.0, 1.0))))
+        self.cell_skewness_values[index] = np.max(np.abs(np.array(angles) - 90.0)) / 90.0
 
-                else:
-                    # For other 2D cell types, skewness/aspect ratio not computed
-                    self.cell_skewness_values[i] = 0.0
-                    self.cell_aspect_ratio_values[i] = 0.0
+        # Aspect ratio
+        self.cell_aspect_ratio_values[index] = np.max(edge_lengths) / np.min(edge_lengths)
 
-            # Non-Orthogonality (2D)
-            # Angle between cell centroid vector and face normal
-            for ci in range(mesh.num_cells):
-                cell_centroid = mesh.cell_centroids[ci]
-                max_non_orthogonality = 0.0
-                for fi, face_nodes in enumerate(mesh.cell_faces[ci]):
-                    if fi < len(mesh.face_midpoints[ci]) and fi < len(
-                        mesh.face_normals[ci]
-                    ):
-                        face_midpoint = mesh.face_midpoints[ci, fi]
-                        face_normal = mesh.face_normals[ci, fi]
+    def _compute_non_orthogonality(self, mesh) -> None:
+        """
+        Compute the maximum non-orthogonality for each cell.
 
-                        # Vector from cell centroid to face midpoint
-                        centroid_to_face_vec = face_midpoint - cell_centroid
-                        norm_centroid_to_face_vec = np.linalg.norm(centroid_to_face_vec)
-                        norm_face_normal = np.linalg.norm(face_normal)
+        Non-orthogonality is the angle between the vector connecting a cell
+        centroid to a face midpoint and the face normal vector.
+        """
+        for ci in range(mesh.num_cells):
+            max_non_ortho = 0.0
+            for fi, _ in enumerate(mesh.cell_faces[ci]):
+                if fi >= mesh.face_midpoints.shape[1]: continue
 
-                        if norm_centroid_to_face_vec > 0 and norm_face_normal > 0:
-                            dot_product = np.dot(centroid_to_face_vec, face_normal)
-                            # Clip to avoid floating point errors causing arccos of > 1 or < -1
-                            angle_rad = np.arccos(
-                                np.clip(
-                                    dot_product
-                                    / (norm_centroid_to_face_vec * norm_face_normal),
-                                    -1.0,
-                                    1.0,
-                                )
-                            )
-                            angle_deg = np.degrees(angle_rad)
-                            # Non-orthogonality is deviation from 0 degrees
-                            non_orthogonality = np.abs(angle_deg - 0.0)
-                            if non_orthogonality > max_non_orthogonality:
-                                max_non_orthogonality = non_orthogonality
-                self.cell_non_orthogonality_values[ci] = max_non_orthogonality
+                vec_to_face = mesh.face_midpoints[ci, fi] - mesh.cell_centroids[ci]
+                norm_vec = np.linalg.norm(vec_to_face)
+                norm_normal = np.linalg.norm(mesh.face_normals[ci, fi])
 
-        # 3. Connectivity Check
-        # Check for unreferenced nodes (nodes not part of any cell)
-        referenced_nodes = set()
-        for conn in mesh.cell_connectivity:
-            for node_idx in conn:
-                referenced_nodes.add(node_idx)
-        if len(referenced_nodes) != mesh.num_nodes:
-            unreferenced_node_count = mesh.num_nodes - len(referenced_nodes)
-            self.connectivity_issues.append(
-                f"Found {unreferenced_node_count} unreferenced nodes."
-            )
+                if norm_vec > 1e-12 and norm_normal > 1e-12:
+                    dot_p = np.dot(vec_to_face, mesh.face_normals[ci, fi])
+                    cos_angle = dot_p / (norm_vec * norm_normal)
+                    angle_deg = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+                    max_non_ortho = max(max_non_ortho, angle_deg)
 
-        # Check for duplicate cells (cells with identical connectivity)
+            self.cell_non_orthogonality_values[ci] = max_non_ortho
+
+    def _check_connectivity(self, mesh) -> None:
+        """Check for topological issues like unreferenced nodes and non-manifold faces."""
+        # Check for unreferenced nodes
+        all_nodes = set(range(mesh.num_nodes))
+        referenced_nodes = set(node for conn in mesh.cell_connectivity for node in conn)
+        unreferenced = all_nodes - referenced_nodes
+        if unreferenced:
+            self.connectivity_issues.append(f"Found {len(unreferenced)} unreferenced nodes.")
+
+        # Check for duplicate cells
         unique_cells = set()
         for i, conn in enumerate(mesh.cell_connectivity):
-            sorted_conn = tuple(sorted(conn))  # Sort to handle permutations
+            sorted_conn = tuple(sorted(conn))
             if sorted_conn in unique_cells:
-                self.connectivity_issues.append(
-                    f"Found duplicate cell at index {i} (connectivity: {conn})."
-                )
-            else:
-                unique_cells.add(sorted_conn)
+                self.connectivity_issues.append(f"Duplicate cell at index {i}: {conn}")
+            unique_cells.add(sorted_conn)
 
-        # Check for non-manifold edges/faces (more than 2 cells sharing an edge/face)
-        # This is partially covered by cell_neighbors, where a face should have 1 or 2 neighbors.
-        # If a face_map entry has more than 2 elements, it's non-manifold.
+        # Check for non-manifold faces (more than 2 cells sharing a face)
         face_map: Dict[Tuple[int, ...], List[int]] = {}
         for ci, faces in enumerate(mesh.cell_faces):
             for face in faces:
-                key = tuple(sorted(face))  # Use sorted tuple of node indices as key
+                key = tuple(sorted(face))
                 face_map.setdefault(key, []).append(ci)
 
-        for face_key, cells_sharing_face in face_map.items():
-            if len(cells_sharing_face) > 2:
+        for key, cells in face_map.items():
+            if len(cells) > 2:
                 self.connectivity_issues.append(
-                    f"Non-manifold face/edge detected (shared by {len(cells_sharing_face)} cells): {face_key}."
+                    f"Non-manifold face {key} shared by {len(cells)} cells."
                 )
-        
-        self._is_computed = True
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         """
-        Prints a summary of the mesh quality metrics.
+        Prints a nicely formatted summary of the computed mesh quality metrics.
         """
         if not self._is_computed:
-            print("Quality metrics have not been computed. Please run compute() first.")
+            print("Quality metrics have not been computed. Run compute() first.")
             return
 
         print(f"\n{'--- Mesh Quality Metrics ---':^80}\n")
@@ -220,31 +208,19 @@ class MeshQuality:
                 f"  {'Min/Max Volume Ratio':<25} {self.min_max_volume_ratio:>15.4f} {'-':>15} {'-':>15}"
             )
 
-        if self.cell_skewness_values.size > 0:
-            skew_min = np.min(self.cell_skewness_values)
-            skew_max = np.max(self.cell_skewness_values)
-            skew_avg = np.mean(self.cell_skewness_values)
-            print(
-                f"  {'Skewness':<25} {skew_min:>15.4f} {skew_max:>15.4f} {skew_avg:>15.4f}"
-            )
+        if self.cell_skewness_values.size > 0 and np.any(self.cell_skewness_values):
+            vals = self.cell_skewness_values
+            print(f"  {'Skewness':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
 
-        if self.cell_non_orthogonality_values.size > 0:
-            non_ortho_min = np.min(self.cell_non_orthogonality_values)
-            non_ortho_max = np.max(self.cell_non_orthogonality_values)
-            non_ortho_avg = np.mean(self.cell_non_orthogonality_values)
-            print(
-                f"  {'Non-Orthogonality (deg)':<25} {non_ortho_min:>15.4f} {non_ortho_max:>15.4f} {non_ortho_avg:>15.4f}"
-            )
+        if self.cell_non_orthogonality_values.size > 0 and np.any(self.cell_non_orthogonality_values):
+            vals = self.cell_non_orthogonality_values
+            print(f"  {'Non-Orthogonality (deg)':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
 
-        if self.cell_aspect_ratio_values.size > 0:
-            ar_min = np.min(self.cell_aspect_ratio_values)
-            ar_max = np.max(self.cell_aspect_ratio_values)
-            ar_avg = np.mean(self.cell_aspect_ratio_values)
-            print(
-                f"  {'Aspect Ratio':<25} {ar_min:>15.4f} {ar_max:>15.4f} {ar_avg:>15.4f}"
-            )
+        if self.cell_aspect_ratio_values.size > 0 and np.any(self.cell_aspect_ratio_values):
+            vals = self.cell_aspect_ratio_values[np.isfinite(self.cell_aspect_ratio_values)]
+            if vals.size > 0:
+                print(f"  {'Aspect Ratio':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
 
-        # --- Connectivity Check ---
         print(f"\n{'--- Connectivity Check ---':^80}\n")
         if self.connectivity_issues:
             print("  Issues Found:")

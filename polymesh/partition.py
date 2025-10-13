@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 from typing import List, Optional
 
@@ -6,6 +7,9 @@ import warnings
 
 from polymesh.core_mesh import CoreMesh
 
+# Note: The METIS library is loaded dynamically. The path to the METIS DLL
+# is set here. This might need to be adjusted depending on the user's
+# environment.
 os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
 try:
     import metis
@@ -19,12 +23,16 @@ def partition_mesh(
     method: str = "metis",
     cell_weights: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """Partition mesh elements into n_parts.
+    """
+    Partition mesh elements into a specified number of parts.
+
+    This function supports different partitioning methods, including METIS and
+    a simple hierarchical coordinate bisection method.
 
     Args:
         mesh: The mesh object to partition.
         n_parts: The number of partitions.
-        method: The partitioning method ('metis', 'hierarchical').
+        method: The partitioning method ('metis' or 'hierarchical').
         cell_weights: Optional weights for each cell.
 
     Returns:
@@ -35,12 +43,12 @@ def partition_mesh(
 
     if method == "metis":
         if not mesh.cell_neighbors.any():
-            mesh.extract_neighbors()
+            mesh._extract_neighbors()
         adjacency = _get_adjacency(mesh)
         parts = _partition_with_metis(adjacency, n_parts, cell_weights)
     elif method == "hierarchical":
         if not mesh.cell_centroids.any():
-            mesh.compute_centroids()
+            mesh._compute_centroids()
         parts = _partition_with_hierarchical(mesh, n_parts, cell_weights)
     else:
         raise NotImplementedError(f"Partition method '{method}' not implemented")
@@ -49,7 +57,18 @@ def partition_mesh(
 
 
 def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
-    """Computes the adjacency list for the mesh cells."""
+    """
+    Computes the adjacency list for the mesh cells.
+
+    The adjacency list is a list of lists, where each inner list contains the
+    indices of the neighbors of a cell.
+
+    Args:
+        mesh: The mesh object.
+
+    Returns:
+        The adjacency list.
+    """
     adjacency: List[List[int]] = []
     for i in range(mesh.num_cells):
         neighs = {int(nb) for nb in mesh.cell_neighbors[i] if nb != -1}
@@ -61,9 +80,9 @@ def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
 def _partition_with_metis(
     adjacency: List[List[int]], n_parts: int, cell_weights: Optional[np.ndarray]
 ) -> np.ndarray:
-    """Partitions the mesh using METIS."""
+    """Partitions the mesh using the METIS library."""
     if metis is None:
-        raise ImportError("metis python binding not available")
+        raise ImportError("METIS python binding not available")
 
     try:
         if cell_weights is not None:
@@ -102,7 +121,10 @@ def _partition_with_hierarchical(
     )
     parts = np.zeros(mesh.num_cells, dtype=int)
 
+    # Iteratively bisect the largest partition until the desired number of
+    # partitions is reached.
     for i in range(1, n_parts):
+        # Find the partition with the most cells to split next.
         part_counts = np.bincount(parts)
         p_to_split = np.argmax(part_counts)
         idxs_to_split = np.where(parts == p_to_split)[0]
@@ -110,11 +132,14 @@ def _partition_with_hierarchical(
         if not idxs_to_split.any():
             continue
 
+        # Determine the axis to split along by finding the longest dimension
+        # of the bounding box of the partition's cell centroids.
         pts = centroids[idxs_to_split]
         spans = pts.max(axis=0) - pts.min(axis=0)
         axis = int(np.argmax(spans))
         order = np.argsort(pts[:, axis])
 
+        # Find the median split point, taking cell weights into account.
         w = weights[idxs_to_split][order]
         cum = np.cumsum(w)
         total = cum[-1]
@@ -124,9 +149,11 @@ def _partition_with_hierarchical(
         else:
             split = int(np.searchsorted(cum, total / 2.0))
 
+        # Handle cases where the split is at the beginning or end.
         if split == 0 or split == len(order):
             split = len(order) // 2
 
+        # Assign the new partition ID to the cells on one side of the split.
         right_indices = idxs_to_split[order[split:]]
         parts[right_indices] = i
 

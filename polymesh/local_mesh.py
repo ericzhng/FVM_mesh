@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import copy
 from typing import Dict, List, Set, Sequence
 
@@ -193,25 +194,52 @@ class LocalMesh(PolyMesh):
         self.recv_map = halo_info["recv"]
 
     def _initialize_cell_maps(self, halo_info: Dict):
-        """Initializes local-global cell mappings."""
+        """
+        Initializes local-global cell mappings.
+
+        This method sets up the mappings between local and global cell indices.
+        It defines which cells are owned by the partition and which are halo cells.
+
+        Args:
+            halo_info (Dict): A dictionary containing information about owned and
+                halo cells for the current partition.
+        """
         owned_cells_g = halo_info["owned_cells"]
         halo_cells_g = halo_info["halo_cells"]
         self.num_owned_cells = len(owned_cells_g)
         self.num_halo_cells = len(halo_cells_g)
-        # local to global cell mapping
+        # Local to global cell mapping
         self.l2g_cells = np.array(owned_cells_g + halo_cells_g, dtype=int)
-        # global to local cell mapping
+        # Global to local cell mapping
         self.g2l_cells = {g: l for l, g in enumerate(self.l2g_cells)}
 
     def _initialize_node_maps(self, global_mesh: CoreMesh):
-        """Identifies required nodes and creates local-global node mappings."""
+        """
+        Identifies required nodes and creates local-global node mappings.
+
+        This method determines the set of nodes required for the local mesh
+        (including both owned and halo cells) and creates the mappings between
+        local and global node indices.
+
+        Args:
+            global_mesh (CoreMesh): The complete, unpartitioned mesh.
+        """
         local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in self.l2g_cells]
         unique_node_g_indices = np.unique(np.concatenate(local_cell_nodes_g))
         self.l2g_nodes = unique_node_g_indices
         self.g2l_nodes = {g: l for l, g in enumerate(self.l2g_nodes)}
 
     def _build_local_mesh_data(self, global_mesh: CoreMesh):
-        """Creates the local node coordinates and cell connectivity."""
+        """
+        Creates the local node coordinates and cell connectivity.
+
+        This method builds the core data structures for the local mesh, including
+        node coordinates and cell connectivity, by extracting the relevant data
+        from the global mesh and remapping it to the local index space.
+
+        Args:
+            global_mesh (CoreMesh): The complete, unpartitioned mesh.
+        """
         self.node_coords = global_mesh.node_coords[self.l2g_nodes]
         local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in self.l2g_cells]
         self.cell_connectivity = self._remap_connectivity(
@@ -230,14 +258,32 @@ class LocalMesh(PolyMesh):
     def _remap_connectivity(
         self, global_conn: Sequence[np.ndarray], g2l_map: Dict[int, int]
     ) -> List[List[int]]:
-        """Remaps a global connectivity sequence to a local one."""
+        """
+        Remaps a global connectivity sequence to a local one.
+
+        Args:
+            global_conn (Sequence[np.ndarray]): A sequence of connectivity arrays
+                using global node indices.
+            g2l_map (Dict[int, int]): A mapping from global to local node indices.
+
+        Returns:
+            List[List[int]]: The remapped connectivity using local node indices.
+        """
         local_conn = []
         for item_conn_g in global_conn:
             local_conn.append([g2l_map[g] for g in item_conn_g])
         return local_conn
 
     def _remap_neighbors(self, global_mesh: CoreMesh):
-        """Remaps the cell_neighbors array to use local cell indices."""
+        """
+        Remaps the cell_neighbors array to use local cell indices.
+
+        This method updates the `cell_neighbors` array of the local mesh to use
+        the local cell indices instead of the global ones.
+
+        Args:
+            global_mesh (CoreMesh): The complete, unpartitioned mesh.
+        """
         # This assumes self.cell_neighbors has been allocated by analyze_mesh()
         for l_idx, g_idx in enumerate(self.l2g_cells):
             local_neighbors = []

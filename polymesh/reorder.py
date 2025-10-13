@@ -1,16 +1,44 @@
+# -*- coding: utf-8 -*-
+
+"""
+This module provides functions for reordering cells and nodes in a mesh to
+optimize the bandwidth of the mesh's adjacency matrix. Reducing the bandwidth
+can significantly improve the performance of numerical solvers.
+
+The module implements several reordering strategies, including:
+- Reverse Cuthill-McKee (RCM)
+- Gibbs-Poole-Stockmeyer (GPS)
+- Sloan
+- Spectral
+- Spatial sorting (by x or y coordinates)
+- Random permutation
+
+Both cell and node reordering are supported. The functions modify the mesh
+object in-place.
+"""
+
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import reverse_cuthill_mckee
 
 from .core_mesh import CoreMesh
 
-# --- Helper for Adjacency Matrix ---
-
 
 def _get_adjacency(mesh: CoreMesh) -> csr_matrix:
-    """Builds the cell-to-cell adjacency matrix for the mesh."""
+    """
+    Builds the cell-to-cell adjacency matrix for the mesh.
+
+    The adjacency matrix is a square matrix where a non-zero entry at (i, j)
+    indicates that cell i and cell j are neighbors.
+
+    Args:
+        mesh: The CoreMesh object.
+
+    Returns:
+        The cell-to-cell adjacency matrix in CSR format.
+    """
     if not hasattr(mesh, "cell_neighbors") or not mesh.cell_neighbors.size > 0:
-        mesh.extract_neighbors()
+        mesh._extract_neighbors()
 
     if mesh.num_cells == 0:
         return csr_matrix((0, 0), dtype=int)
@@ -27,18 +55,35 @@ def _get_adjacency(mesh: CoreMesh) -> csr_matrix:
     )
 
 
-# --- Cell Reordering Strategies ---
-
-
 class _CellReorderStrategy:
-    """Abstract base class for cell reordering strategies."""
+    """
+    Abstract base class for cell reordering strategies.
+
+    Subclasses must implement the `get_order` method, which takes a mesh
+    and returns a permutation array representing the new cell order.
+    """
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
+        """
+        Computes the new cell order for the given mesh.
+
+        Args:
+            mesh: The CoreMesh object.
+
+        Returns:
+            A 1D numpy array representing the new cell order.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
 
 class _RCMStrategy(_CellReorderStrategy):
-    """Reverse Cuthill-McKee ordering strategy."""
+    """
+    Reverse Cuthill-McKee (RCM) ordering strategy.
+
+    RCM is a widely used algorithm for reducing the bandwidth of sparse
+    symmetric matrices. It typically results in a smaller profile and
+    bandwidth than the original Cuthill-McKee algorithm.
+    """
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
         adj_matrix = _get_adjacency(mesh)
@@ -46,7 +91,13 @@ class _RCMStrategy(_CellReorderStrategy):
 
 
 class _GPSStrategy(_CellReorderStrategy):
-    """Gibbs-Poole-Stockmeyer ordering strategy."""
+    """
+    Gibbs-Poole-Stockmeyer (GPS) ordering strategy.
+
+    The GPS algorithm aims to find a "good" starting node for the RCM
+    algorithm by finding a pseudo-peripheral node. This can lead to
+    better orderings than RCM alone.
+    """
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
         from scipy.sparse.csgraph import breadth_first_order
@@ -58,12 +109,14 @@ class _GPSStrategy(_CellReorderStrategy):
             or adj_matrix.shape is None
         ):
             return np.array([], dtype=int)
+
         n = adj_matrix.shape[0]
         if n == 0:
             return np.array([], dtype=int)
 
         degrees = adj_matrix.getnnz(axis=1)
         start_node = np.argmin(degrees)
+
         order, _ = breadth_first_order(
             adj_matrix, start_node, directed=False, return_predecessors=True
         )
@@ -112,7 +165,13 @@ class _GPSStrategy(_CellReorderStrategy):
 
 
 class _SloanStrategy(_CellReorderStrategy):
-    """Sloan ordering strategy."""
+    """
+    Sloan ordering strategy.
+
+    The Sloan algorithm is another bandwidth and profile reduction
+    algorithm that is often competitive with RCM and GPS. It uses a
+    priority queue to select nodes during the ordering process.
+    """
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
         from scipy.sparse.csgraph import dijkstra
@@ -124,6 +183,7 @@ class _SloanStrategy(_CellReorderStrategy):
             or adj_matrix.shape is None
         ):
             return np.array([], dtype=int)
+
         n = adj_matrix.shape[0]
         if n == 0:
             return np.array([], dtype=int)
@@ -169,7 +229,13 @@ class _SloanStrategy(_CellReorderStrategy):
 
 
 class _SpectralStrategy(_CellReorderStrategy):
-    """Spectral bisection ordering strategy."""
+    """
+    Spectral bisection ordering strategy.
+
+    This method uses the eigenvector corresponding to the second smallest
+    eigenvalue of the graph Laplacian (the Fiedler vector) to partition
+    the graph and order the nodes.
+    """
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
         from scipy.sparse.linalg import eigsh
@@ -210,9 +276,10 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
     """
     Renumbers the cells of a mesh in-place to optimize matrix bandwidth.
 
-    This function modifies the mesh object directly.
-    If the mesh is a LocalMesh, only the owned cells are reordered.
-    Derived properties will need to be re-computed.
+    This function modifies the mesh object directly. If the mesh is a LocalMesh,
+    only the owned cells are reordered, and halo cells remain at the end.
+    After renumbering, derived properties like neighbors and centroids are
+    invalidated and will need to be re-computed.
 
     Args:
         mesh: The input CoreMesh object to be modified.
@@ -222,7 +289,6 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
     from .local_mesh import LocalMesh
 
     is_local = isinstance(mesh, LocalMesh)
-
     num_to_reorder = mesh.num_owned_cells if is_local else mesh.num_cells
 
     if num_to_reorder == 0:
@@ -246,55 +312,50 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
     reorder_strategy = strategy_map[strategy]()
 
     if is_local:
-        # Create a temporary mesh view for the owned cells
+        # For LocalMesh, reorder only the owned cells.
+        # Create a temporary mesh view for the owned part.
         owned_mesh = CoreMesh()
         owned_mesh.num_cells = mesh.num_owned_cells
         owned_mesh.cell_connectivity = mesh.cell_connectivity[: mesh.num_owned_cells]
-        owned_mesh.node_coords = mesh.node_coords  # Needed for some strategies
+        owned_mesh.node_coords = mesh.node_coords
         owned_mesh.dimension = mesh.dimension
 
-        # We need to compute neighbors only for the owned part
         owned_mesh._extract_neighbors()
         if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
             owned_mesh.cell_centroids = mesh.cell_centroids[: mesh.num_owned_cells]
 
         new_order_local = reorder_strategy.get_order(owned_mesh)
 
-        # The new order is for the owned cells. We need to combine it with the halo cells.
+        # Combine the new order of owned cells with the original order of halo cells.
         new_order = np.concatenate(
             (new_order_local, np.arange(mesh.num_owned_cells, mesh.num_cells))
         )
-
     else:
         new_order = reorder_strategy.get_order(mesh)
 
-    # Reorder cell properties in-place
-    # It's safer to create a new list and then assign it back
-    new_cell_connectivity = [mesh.cell_connectivity[i] for i in new_order]
-    mesh.cell_connectivity = new_cell_connectivity
+    # Apply the new order to cell-based properties.
+    mesh.cell_connectivity = [mesh.cell_connectivity[i] for i in new_order]
 
     if hasattr(mesh, "cell_type_ids") and mesh.cell_type_ids.size > 0:
         mesh.cell_type_ids = mesh.cell_type_ids[new_order]
 
-    # Invalidate derived fields that depend on cell ordering
+    if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
+        mesh.cell_centroids = mesh.cell_centroids[new_order]
+
+    # Invalidate derived fields that depend on cell ordering.
     if hasattr(mesh, "cell_neighbors"):
         mesh.cell_neighbors = np.array([])
-    if hasattr(mesh, "cell_centroids"):
-        # we need to reorder centroids as well if they exist
-        if mesh.cell_centroids.size > 0:
-            mesh.cell_centroids = mesh.cell_centroids[new_order]
     if hasattr(mesh, "_is_analyzed"):
         setattr(mesh, "_is_analyzed", False)
-
-
-# --- Node Reordering ---
 
 
 def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> None:
     """
     Renumbers the nodes of a mesh in-place to optimize matrix bandwidth.
 
-    This function modifies the mesh object directly.
+    This function modifies the mesh object directly. After renumbering, derived
+    properties like neighbors and centroids are invalidated and will need to
+    be re-computed.
 
     Args:
         mesh: The input CoreMesh object to be modified.
@@ -304,7 +365,7 @@ def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> None:
     if mesh.num_nodes == 0:
         return
 
-    # For node reordering, the adjacency is node-to-node
+    # Build node-to-node adjacency matrix from cell connectivity.
     rows, cols = [], []
     for cell in mesh.cell_connectivity:
         for i in range(len(cell)):
@@ -332,17 +393,17 @@ def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> None:
             f"Node renumbering strategy '{strategy}' is not implemented."
         )
 
-    # Create the inverse mapping (old index -> new index)
+    # Create an inverse mapping from the new order.
     remap = np.empty_like(new_order)
     remap[new_order] = np.arange(mesh.num_nodes, dtype=int)
 
-    # Apply renumbering in-place
+    # Apply the renumbering to node coordinates and cell connectivity.
     mesh.node_coords = mesh.node_coords[new_order]
     mesh.cell_connectivity = [
         list(remap[np.array(c, dtype=int)]) for c in mesh.cell_connectivity
     ]
 
-    # Invalidate derived fields that depend on node/cell ordering
+    # Invalidate derived fields that depend on node/cell ordering.
     if hasattr(mesh, "cell_neighbors"):
         mesh.cell_neighbors = np.array([])
     if hasattr(mesh, "cell_centroids"):
