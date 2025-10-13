@@ -31,9 +31,6 @@ class PolyMesh(CoreMesh):
         """Initializes the PolyMesh instance and its attributes."""
         super().__init__()
 
-        # Analysis flag
-        self._is_analyzed: bool = False
-
         # Computed geometric fields
         self.cell_centroids: np.ndarray = np.array([])
         self.cell_volumes: np.ndarray = np.array([])
@@ -93,12 +90,19 @@ class PolyMesh(CoreMesh):
         face_templates = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # Tet
             8: [
-                [0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4],
-                [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7],
+                [0, 1, 2, 3],
+                [4, 5, 6, 7],
+                [0, 1, 5, 4],
+                [1, 2, 6, 5],
+                [2, 3, 7, 6],
+                [3, 0, 4, 7],
             ],  # Hex
             6: [
-                [0, 1, 2], [3, 4, 5], [0, 1, 4, 3],
-                [1, 2, 5, 4], [2, 0, 3, 5],
+                [0, 1, 2],
+                [3, 4, 5],
+                [0, 1, 4, 3],
+                [1, 2, 5, 4],
+                [2, 0, 3, 5],
             ],  # Wedge
         }
         self.cell_faces = []
@@ -189,7 +193,9 @@ class PolyMesh(CoreMesh):
                 )
         elif self.dimension == 3:
             # Divergence theorem: V = (1/3) * sum(face_mid . face_normal * face_area)
-            contrib = (self.face_midpoints * self.face_normals).sum(axis=2) * self.face_areas
+            contrib = (self.face_midpoints * self.face_normals).sum(
+                axis=2
+            ) * self.face_areas
             self.cell_volumes = np.sum(contrib, axis=1) / 3.0
         else:
             # For other dimensions, volume is not computed

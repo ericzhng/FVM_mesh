@@ -168,7 +168,7 @@ class LocalMesh(PolyMesh):
         super().__init__()
         self.rank = rank
         if not global_mesh.cell_neighbors.size > 0:
-            global_mesh._extract_neighbors()
+            global_mesh.analyze_mesh()
 
         # 1. Determine halo and communication patterns from the global mesh
         halo_indices = _compute_halo_indices(global_mesh, parts)
@@ -303,7 +303,10 @@ class LocalMesh(PolyMesh):
 
 
 def create_local_meshes(
-    global_mesh: CoreMesh, n_parts: int, partition_method: str = "metis"
+    global_mesh: CoreMesh,
+    n_parts: int,
+    partition_method: str = "metis",
+    renumber_strategy: str = "rcm",
 ) -> List["LocalMesh"]:
     """
     Partitions a global mesh and creates a list of local mesh objects.
@@ -318,12 +321,13 @@ def create_local_meshes(
         global_mesh: The complete, unpartitioned PolyMesh object.
         n_parts: The desired number of partitions.
         partition_method: The algorithm to use for partitioning ('metis' or 'hierarchical').
+        renumber_strategy: The cell renumbering strategy ('bfs', 'rcm', etc.).
 
     Returns:
         A list of LocalMesh objects, one for each partition.
     """
     if not global_mesh.cell_neighbors.size > 0:
-        global_mesh._extract_neighbors()
+        global_mesh.analyze_mesh()
 
     # 1. Partition the global mesh
     parts = partition_mesh(global_mesh, n_parts, method=partition_method)
@@ -334,7 +338,8 @@ def create_local_meshes(
     if n_parts > 0:
         for rank in range(n_parts):
             local_mesh = LocalMesh(global_mesh, parts, rank)
-            renumber_cells(local_mesh, strategy="bfs")
+            renumber_cells(local_mesh, strategy=renumber_strategy)
+            local_mesh.analyze_mesh()
             local_meshes.append(local_mesh)
 
     return local_meshes

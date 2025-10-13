@@ -38,7 +38,7 @@ def _get_adjacency(mesh: CoreMesh) -> csr_matrix:
         The cell-to-cell adjacency matrix in CSR format.
     """
     if not hasattr(mesh, "cell_neighbors") or not mesh.cell_neighbors.size > 0:
-        mesh._extract_neighbors()
+        mesh.analyze_mesh()
 
     if mesh.num_cells == 0:
         return csr_matrix((0, 0), dtype=int)
@@ -320,7 +320,7 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
         owned_mesh.node_coords = mesh.node_coords
         owned_mesh.dimension = mesh.dimension
 
-        owned_mesh._extract_neighbors()
+        owned_mesh.analyze_mesh()
         if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
             owned_mesh.cell_centroids = mesh.cell_centroids[: mesh.num_owned_cells]
 
