@@ -5,9 +5,8 @@ from pathlib import Path
 import sys
 import numpy as np
 
-from polymesh.core_mesh import CoreMesh
-from polymesh.polymesh import PolyMesh
-from polymesh.local_mesh import LocalMesh
+from polymesh.poly_mesh import PolyMesh
+from polymesh.local_mesh import LocalMesh, create_local_meshes
 from polymesh.partition import partition_mesh
 
 
@@ -44,11 +43,7 @@ class TestWorkflow(unittest.TestCase):
         4. Verify the properties of the LocalMesh.
         """
         # 1. Read mesh, analyze and then partition
-        core_mesh = CoreMesh()
-        core_mesh.read_gmsh(self.mesh_filepath)
-
-        global_mesh = PolyMesh()
-        global_mesh.read_gmsh(self.mesh_filepath)
+        global_mesh = PolyMesh.from_gmsh(self.mesh_filepath)
         global_mesh.analyze_mesh()
         global_mesh.print_summary()
 
@@ -59,15 +54,26 @@ class TestWorkflow(unittest.TestCase):
 
         # 2. Partition the mesh into 4 parts
         n_parts = 4
-        part_result = partition_mesh(core_mesh, n_parts=n_parts, method="metis")
+        parts = partition_mesh(global_mesh, n_parts=n_parts, method="metis")
 
-        self.assertEqual(part_result.n_parts, n_parts)
+        global_mesh.plot(filepath=f"{self.tmp_path}/global_mesh.png", parts=parts)
 
-        local_meshes: list[LocalMesh] = []
+        # get number of parts from partition result
+        self.assertEqual(len(np.unique(parts)), n_parts)
+
+        local_meshes: list[LocalMesh] = create_local_meshes(
+            global_mesh, n_parts, "metis"
+        )
+
+        self.assertEqual(len(local_meshes), n_parts)
+
         for i in range(n_parts):
-            # 3. Create a LocalMesh for each partition
-            local_mesh = LocalMesh(global_mesh, part_result, rank=i)
-            local_meshes.append(local_mesh)
+            local_mesh = local_meshes[i]
+
+            local_mesh.plot(
+                filepath=f"{self.tmp_path}/local_mesh_rank_{local_mesh.rank}.png"
+            )
+            local_mesh.print_summary()
 
             # 4. Verify the properties of the LocalMesh
             self.assertEqual(local_mesh.rank, i)
@@ -75,31 +81,6 @@ class TestWorkflow(unittest.TestCase):
                 local_mesh.num_cells,
                 local_mesh.num_owned_cells + local_mesh.num_halo_cells,
             )
-
-            # Check that local cell 0 is the same as the first global owned cell
-            self.assertEqual(
-                local_mesh.l2g_cells[0], part_result.halo_indices[i]["owned_cells"][0]
-            )
-
-            # Check that owned cells are numbered contiguously from 0
-            owned_cell_indices_l = list(range(local_mesh.num_owned_cells))
-            all_sent_indices = []
-            for p in local_mesh.send_map:
-                if local_mesh.send_map[p]:
-                    all_sent_indices.extend(local_mesh.send_map[p])
-            self.assertTrue(
-                np.array_equal(
-                    owned_cell_indices_l, sorted(list(set(all_sent_indices)))
-                )
-            )
-
-            # Check that halo cells follow owned cells
-            if local_mesh.num_halo_cells > 0:
-                first_halo_l = local_mesh.num_owned_cells
-                self.assertEqual(
-                    local_mesh.l2g_cells[first_halo_l],
-                    part_result.halo_indices[i]["halo_cells"][0],
-                )
 
         # Verify send/recv maps
         for i in range(n_parts):

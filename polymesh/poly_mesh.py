@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import List
 
 from .core_mesh import CoreMesh
 from .quality import MeshQuality
@@ -199,11 +199,11 @@ class PolyMesh(CoreMesh):
                 f"  {'Cell Volume':<20} {vol_min:>15.4e} {vol_max:>15.4e} {vol_avg:>15.4e}"
             )
 
-        self.compute_quality()
+        self._compute_quality()
         self.quality.print_summary()
 
         print("\n" + "=" * 80)
 
-    def compute_quality(self) -> None:
+    def _compute_quality(self) -> None:
         """Computes mesh quality metrics."""
         self.quality.compute(self)

@@ -1,7 +1,7 @@
 import unittest
 import os
 
-from polymesh.polymesh import PolyMesh
+from polymesh.poly_mesh import PolyMesh
 
 
 class TestPolyMesh(unittest.TestCase):

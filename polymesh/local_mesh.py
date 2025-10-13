@@ -3,7 +3,9 @@ from typing import Dict, List, Set, Sequence
 
 import numpy as np
 
-from .polymesh import PolyMesh
+from polymesh.reorder import renumber_cells
+
+from .poly_mesh import PolyMesh
 from .core_mesh import CoreMesh
 from .partition import partition_mesh, print_partition_summary
 
@@ -165,7 +167,7 @@ class LocalMesh(PolyMesh):
         super().__init__()
         self.rank = rank
         if not global_mesh.cell_neighbors.size > 0:
-            global_mesh.extract_neighbors()
+            global_mesh._extract_neighbors()
 
         # 1. Determine halo and communication patterns from the global mesh
         halo_indices = _compute_halo_indices(global_mesh, parts)
@@ -179,8 +181,6 @@ class LocalMesh(PolyMesh):
 
         # 4. Build the local mesh structure (nodes and connectivity)
         self._build_local_mesh_data(global_mesh)
-
-        self.plot(filepath=f"local_mesh_rank{rank}.png")
 
         # 5. Analyze the newly created local mesh to build faces, volumes, etc.
         self.analyze_mesh()
@@ -198,7 +198,9 @@ class LocalMesh(PolyMesh):
         halo_cells_g = halo_info["halo_cells"]
         self.num_owned_cells = len(owned_cells_g)
         self.num_halo_cells = len(halo_cells_g)
+        # local to global cell mapping
         self.l2g_cells = np.array(owned_cells_g + halo_cells_g, dtype=int)
+        # global to local cell mapping
         self.g2l_cells = {g: l for l, g in enumerate(self.l2g_cells)}
 
     def _initialize_node_maps(self, global_mesh: CoreMesh):
@@ -275,7 +277,7 @@ def create_local_meshes(
         A list of LocalMesh objects, one for each partition.
     """
     if not global_mesh.cell_neighbors.size > 0:
-        global_mesh.extract_neighbors()
+        global_mesh._extract_neighbors()
 
     # 1. Partition the global mesh
     parts = partition_mesh(global_mesh, n_parts, method=partition_method)
@@ -286,6 +288,7 @@ def create_local_meshes(
     if n_parts > 0:
         for rank in range(n_parts):
             local_mesh = LocalMesh(global_mesh, parts, rank)
+            renumber_cells(local_mesh, strategy="bfs")
             local_meshes.append(local_mesh)
 
     return local_meshes

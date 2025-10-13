@@ -14,6 +14,9 @@ class CoreMesh:
         self.num_nodes: int = 0
         self.num_cells: int = 0
 
+        # Analysis flag
+        self._is_analyzed: bool = False
+
         # geometry/connectivity
         self.node_coords: np.ndarray = np.array([])  # (N,3)
         self.cell_connectivity: List[List[int]] = []
@@ -33,6 +36,7 @@ class CoreMesh:
         self._tag_to_index: Dict[int, int] = {}
 
     # ---------- I/O ----------
+
     def read_gmsh(self, msh_file: str, gmsh_verbose: int = 0) -> None:
         """Read mesh nodes and elements from Gmsh .msh file."""
         if gmsh is None:
@@ -139,7 +143,18 @@ class CoreMesh:
                 self.boundary_faces_nodes = np.vstack(all_faces)
                 self.boundary_faces_tags = np.array(all_tags, dtype=int)
 
-    def extract_neighbors(self) -> None:
+    def analyze_mesh(self) -> None:
+        """Compute centroids, faces, neighbors, face areas/normals, and cell volumes."""
+        if self.num_cells == 0:
+            raise RuntimeError(
+                "No cells available. Call read_gmsh or populate cells first"
+            )
+        self._compute_centroids()
+        self._extract_neighbors()
+
+        self._is_analyzed = True  # Set flag after successful analysis
+
+    def _extract_neighbors(self) -> None:
         # face templates for common element node counts (3D); 2D handled generically
         face_templates = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # tet
@@ -197,7 +212,7 @@ class CoreMesh:
 
         self.cell_neighbors = neighbors
 
-    def compute_centroids(self) -> None:
+    def _compute_centroids(self) -> None:
         self.cell_centroids = np.array(
             [np.mean(self.node_coords[c], axis=0) for c in self.cell_connectivity]
         )

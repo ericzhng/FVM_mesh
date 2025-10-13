@@ -1,70 +1,28 @@
+import os
 import unittest
 import numpy as np
 
-from polymesh import PolyMesh, LocalMesh
+from polymesh import LocalMesh
+from tests.common_meshes import create_3x3_quad_mesh_fixture
 
 
 class TestLocalMesh(unittest.TestCase):
-
     def setUp(self):
         """
-        Sets up a simple 2x2 quadrilateral mesh for testing.
-
-        Mesh Layout:
-        Nodes (9 total):
-        6--7--8
-        |  |  |
-        3--4--5
-        |  |  |
-        0--1--2
-
-        Cells (4 total):
-        Cell 2: [3, 4, 7, 6]
-        Cell 3: [4, 5, 8, 7]
-        Cell 0: [0, 1, 4, 3]
-        Cell 1: [1, 2, 5, 4]
-
-        Partitioning (2 parts):
-        - Rank 0 owns cells [0, 2]
-        - Rank 1 owns cells [1, 3]
+        Sets up a simple 3x3 quadrilateral mesh for testing.
         """
-        self.global_mesh = PolyMesh()
+        self.tmp_path = "results/localmesh"
+        os.makedirs(self.tmp_path, exist_ok=True)
 
-        # Define nodes
-        self.global_mesh.node_coords = np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [2.0, 0.0, 0.0],  # Nodes 0, 1, 2
-                [0.0, 1.0, 0.0],
-                [1.0, 1.0, 0.0],
-                [2.0, 1.0, 0.0],  # Nodes 3, 4, 5
-                [0.0, 2.0, 0.0],
-                [1.0, 2.0, 0.0],
-                [2.0, 2.0, 0.0],  # Nodes 6, 7, 8
-            ]
+        (
+            self.global_mesh,
+            self.parts,
+            self.n_parts,
+        ) = create_3x3_quad_mesh_fixture()
+
+        self.global_mesh.plot(
+            filepath=f"{self.tmp_path}/global_mesh.png", parts=self.parts
         )
-
-        # Define cells
-        self.global_mesh.cell_connectivity = [
-            [0, 1, 4, 3],  # Cell 0
-            [1, 2, 5, 4],  # Cell 1
-            [3, 4, 7, 6],  # Cell 2
-            [4, 5, 8, 7],  # Cell 3
-        ]
-
-        self.global_mesh.dimension = 2
-        self.global_mesh.num_nodes = 9
-        self.global_mesh.num_cells = 4
-
-        self.global_mesh.plot(filepath="global_mesh.png")
-
-        # # Analyze the mesh to generate neighbors, etc.
-        # self.global_mesh.extract_neighbors()
-
-        # Define the partitioning scheme
-        self.parts = np.array([0, 1, 0, 1])
-        self.n_parts = 2
 
     def test_local_mesh_creation_rank0(self):
         """Tests the creation and properties of the local mesh for rank 0."""
@@ -73,29 +31,18 @@ class TestLocalMesh(unittest.TestCase):
 
         # --- Verify cell properties ---
         self.assertEqual(local_mesh.rank, rank)
-        self.assertEqual(local_mesh.num_owned_cells, 2)
-        self.assertEqual(local_mesh.num_halo_cells, 2)
-        self.assertEqual(local_mesh.num_cells, 4)
+        self.assertEqual(local_mesh.num_owned_cells, 3)
+        self.assertEqual(local_mesh.num_halo_cells, 3)
+        self.assertEqual(local_mesh.num_cells, 6)
 
-        # Owned cells (global IDs) should be [0, 2]
-        # Halo cells (global IDs) should be [1, 3]
-        np.testing.assert_array_equal(local_mesh.l2g_cells, [0, 2, 1, 3])
-        self.assertEqual(local_mesh.g2l_cells, {0: 0, 2: 1, 1: 2, 3: 3})
+        # Owned cells (global IDs) should be [0, 1, 2]
+        # Halo cells (global IDs) should be [3, 4, 5]
+        np.testing.assert_array_equal(local_mesh.l2g_cells, [0, 1, 2, 3, 4, 5])
+        self.assertEqual(local_mesh.g2l_cells, {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5})
 
         # --- Verify node properties ---
-        # All 9 nodes are needed for this partition
-        self.assertEqual(local_mesh.num_nodes, 9)
-        np.testing.assert_array_equal(local_mesh.l2g_nodes, np.arange(9))
-
-        # --- Verify communication maps ---
-        # Rank 0 should send its two owned cells (local indices 0, 1) to rank 1
-        self.assertIn(1, local_mesh.send_map)
-        self.assertEqual(sorted(local_mesh.send_map[1]), [0, 1])
-
-        # Rank 0 should expect to receive two halo cells from rank 1
-        # These will be stored at local halo indices 0 and 1
-        self.assertIn(1, local_mesh.recv_map)
-        self.assertEqual(sorted(local_mesh.recv_map[1]), [0, 1])
+        self.assertEqual(local_mesh.num_nodes, 12)
+        np.testing.assert_array_equal(local_mesh.l2g_nodes, np.arange(12))
 
     def test_local_mesh_creation_rank1(self):
         """Tests the creation and properties of the local mesh for rank 1."""
@@ -104,44 +51,59 @@ class TestLocalMesh(unittest.TestCase):
 
         # --- Verify cell properties ---
         self.assertEqual(local_mesh.rank, rank)
-        self.assertEqual(local_mesh.num_owned_cells, 2)
-        self.assertEqual(local_mesh.num_halo_cells, 2)
-        self.assertEqual(local_mesh.num_cells, 4)
+        self.assertEqual(local_mesh.num_owned_cells, 3)
+        self.assertEqual(local_mesh.num_halo_cells, 6)
+        self.assertEqual(local_mesh.num_cells, 9)
 
-        # Owned cells (global IDs) should be [1, 3]
-        # Halo cells (global IDs) should be [0, 2]
-        np.testing.assert_array_equal(local_mesh.l2g_cells, [1, 3, 0, 2])
-        self.assertEqual(local_mesh.g2l_cells, {1: 0, 3: 1, 0: 2, 2: 3})
+        # Owned cells (global IDs) should be [3, 4, 5]
+        # Halo cells (global IDs) should be [0, 1, 2, 6, 7, 8]
+        np.testing.assert_array_equal(local_mesh.l2g_cells, [3, 4, 5, 0, 1, 2, 6, 7, 8])
+        self.assertEqual(
+            local_mesh.g2l_cells, {3: 0, 4: 1, 5: 2, 0: 3, 1: 4, 2: 5, 6: 6, 7: 7, 8: 8}
+        )
 
         # --- Verify node properties ---
-        # All 9 nodes are needed for this partition
-        self.assertEqual(local_mesh.num_nodes, 9)
-        np.testing.assert_array_equal(local_mesh.l2g_nodes, np.arange(9))
+        self.assertEqual(local_mesh.num_nodes, 16)
+        np.testing.assert_array_equal(local_mesh.l2g_nodes, np.arange(16))
 
-        # --- Verify communication maps ---
-        # Rank 1 should send its two owned cells (local indices 0, 1) to rank 0
-        self.assertIn(0, local_mesh.send_map)
-        self.assertEqual(sorted(local_mesh.send_map[0]), [0, 1])
+    def test_local_mesh_creation_rank2(self):
+        """Tests the creation and properties of the local mesh for rank 2."""
+        rank = 2
+        local_mesh = LocalMesh(self.global_mesh, self.parts, rank)
 
-        # Rank 1 should expect to receive two halo cells from rank 0
-        # These will be stored at local halo indices 0 and 1
-        self.assertIn(0, local_mesh.recv_map)
-        self.assertEqual(sorted(local_mesh.recv_map[0]), [0, 1])
+        # --- Verify cell properties ---
+        self.assertEqual(local_mesh.rank, rank)
+        self.assertEqual(local_mesh.num_owned_cells, 3)
+        self.assertEqual(local_mesh.num_halo_cells, 3)
+        self.assertEqual(local_mesh.num_cells, 6)
+
+        # Owned cells (global IDs) should be [6, 7, 8]
+        # Halo cells (global IDs) should be [3, 4, 5]
+        np.testing.assert_array_equal(local_mesh.l2g_cells, [6, 7, 8, 3, 4, 5])
+        self.assertEqual(local_mesh.g2l_cells, {6: 0, 7: 1, 8: 2, 3: 3, 4: 4, 5: 5})
+
+        # --- Verify node properties ---
+        self.assertEqual(local_mesh.num_nodes, 12)
+        expected_l2g = np.array([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        np.testing.assert_array_equal(local_mesh.l2g_nodes, expected_l2g)
 
     def test_symmetric_communication_maps(self):
         """Ensures that the send/recv maps are symmetric across partitions."""
-        local_mesh_0 = LocalMesh(self.global_mesh, self.parts, rank=0)
-        local_mesh_1 = LocalMesh(self.global_mesh, self.parts, rank=1)
+        local_meshes = [
+            LocalMesh(self.global_mesh, self.parts, rank=i) for i in range(self.n_parts)
+        ]
 
-        # What rank 0 sends to rank 1, rank 1 should expect to receive from rank 0
-        self.assertEqual(
-            len(local_mesh_0.send_map.get(1, [])), len(local_mesh_1.recv_map.get(0, []))
-        )
+        for i in range(self.n_parts):
+            for j in range(i + 1, self.n_parts):
+                # What rank i sends to rank j, rank j should expect to receive from rank i
+                send_map_ij = local_meshes[i].send_map.get(j, [])
+                recv_map_ji = local_meshes[j].recv_map.get(i, [])
+                self.assertEqual(len(send_map_ij), len(recv_map_ji))
 
-        # What rank 1 sends to rank 0, rank 0 should expect to receive from rank 1
-        self.assertEqual(
-            len(local_mesh_1.send_map.get(0, [])), len(local_mesh_0.recv_map.get(1, []))
-        )
+                # What rank j sends to rank i, rank i should expect to receive from rank j
+                send_map_ji = local_meshes[j].send_map.get(i, [])
+                recv_map_ij = local_meshes[i].recv_map.get(j, [])
+                self.assertEqual(len(send_map_ji), len(recv_map_ij))
 
 
 if __name__ == "__main__":

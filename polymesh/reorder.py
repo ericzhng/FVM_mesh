@@ -1,5 +1,3 @@
-import copy
-
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import reverse_cuthill_mckee
@@ -12,7 +10,6 @@ from .core_mesh import CoreMesh
 def _get_adjacency(mesh: CoreMesh) -> csr_matrix:
     """Builds the cell-to-cell adjacency matrix for the mesh."""
     if not hasattr(mesh, "cell_neighbors") or not mesh.cell_neighbors.size > 0:
-        # This is a temporary measure; ideally, the mesh passed should be analyzed.
         mesh.extract_neighbors()
 
     if mesh.num_cells == 0:
@@ -91,7 +88,6 @@ class _GPSStrategy(_CellReorderStrategy):
 
         center_node = path[len(path) // 2] if path else x
 
-        # Manual Cuthill-McKee from the center node
         q, visited, cm_order = [center_node], {center_node}, []
         while len(cm_order) < n:
             if not q:
@@ -190,8 +186,17 @@ class _SpatialXStrategy(_CellReorderStrategy):
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
         if not hasattr(mesh, "cell_centroids") or not mesh.cell_centroids.size > 0:
-            mesh.compute_centroids()
+            mesh._compute_centroids()
         return np.argsort(mesh.cell_centroids[:, 0])
+
+
+class _SpatialYStrategy(_CellReorderStrategy):
+    """Sorts cells by their centroid's y-coordinate."""
+
+    def get_order(self, mesh: CoreMesh) -> np.ndarray:
+        if not hasattr(mesh, "cell_centroids") or not mesh.cell_centroids.size > 0:
+            mesh._compute_centroids()
+        return np.argsort(mesh.cell_centroids[:, 1])
 
 
 class _RandomStrategy(_CellReorderStrategy):
@@ -201,24 +206,27 @@ class _RandomStrategy(_CellReorderStrategy):
         return np.random.permutation(mesh.num_cells)
 
 
-def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
+def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
     """
-    Renumbers the cells of a mesh to optimize matrix bandwidth.
+    Renumbers the cells of a mesh in-place to optimize matrix bandwidth.
 
-    This function creates a new mesh with renumbered cells, leaving the original
-    mesh unmodified. It reorders core cell properties and returns a new mesh.
+    This function modifies the mesh object directly.
+    If the mesh is a LocalMesh, only the owned cells are reordered.
     Derived properties will need to be re-computed.
 
     Args:
-        mesh: The input CoreMesh object.
+        mesh: The input CoreMesh object to be modified.
         strategy: The renumbering strategy. Options include 'rcm', 'gps',
-                  'sloan', 'spectral', 'spatial_x', 'random'.
-
-    Returns:
-        A new CoreMesh object with renumbered cells.
+                  'sloan', 'spectral', 'spatial_x', 'spatial_y', 'random'.
     """
-    if mesh.num_cells == 0:
-        return copy.deepcopy(mesh)
+    from .local_mesh import LocalMesh
+
+    is_local = isinstance(mesh, LocalMesh)
+
+    num_to_reorder = mesh.num_owned_cells if is_local else mesh.num_cells
+
+    if num_to_reorder == 0:
+        return
 
     strategy_map = {
         "rcm": _RCMStrategy,
@@ -226,6 +234,7 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
         "sloan": _SloanStrategy,
         "spectral": _SpectralStrategy,
         "spatial_x": _SpatialXStrategy,
+        "spatial_y": _SpatialYStrategy,
         "random": _RandomStrategy,
     }
 
@@ -235,43 +244,65 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
         )
 
     reorder_strategy = strategy_map[strategy]()
-    new_order = reorder_strategy.get_order(mesh)
 
-    # Create a new mesh with reordered cell properties
-    new_mesh = CoreMesh()
-    new_mesh.dimension = mesh.dimension
-    new_mesh.node_coords = mesh.node_coords.copy()
-    new_mesh.num_nodes = mesh.num_nodes
-    new_mesh.cell_type_map = mesh.cell_type_map
-    new_mesh.num_cells = mesh.num_cells
+    if is_local:
+        # Create a temporary mesh view for the owned cells
+        owned_mesh = CoreMesh()
+        owned_mesh.num_cells = mesh.num_owned_cells
+        owned_mesh.cell_connectivity = mesh.cell_connectivity[: mesh.num_owned_cells]
+        owned_mesh.node_coords = mesh.node_coords  # Needed for some strategies
+        owned_mesh.dimension = mesh.dimension
 
-    new_mesh.cell_connectivity = [mesh.cell_connectivity[i] for i in new_order]
+        # We need to compute neighbors only for the owned part
+        owned_mesh._extract_neighbors()
+        if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
+            owned_mesh.cell_centroids = mesh.cell_centroids[: mesh.num_owned_cells]
+
+        new_order_local = reorder_strategy.get_order(owned_mesh)
+
+        # The new order is for the owned cells. We need to combine it with the halo cells.
+        new_order = np.concatenate(
+            (new_order_local, np.arange(mesh.num_owned_cells, mesh.num_cells))
+        )
+
+    else:
+        new_order = reorder_strategy.get_order(mesh)
+
+    # Reorder cell properties in-place
+    # It's safer to create a new list and then assign it back
+    new_cell_connectivity = [mesh.cell_connectivity[i] for i in new_order]
+    mesh.cell_connectivity = new_cell_connectivity
+
     if hasattr(mesh, "cell_type_ids") and mesh.cell_type_ids.size > 0:
-        new_mesh.cell_type_ids = mesh.cell_type_ids[new_order]
+        mesh.cell_type_ids = mesh.cell_type_ids[new_order]
 
-    return new_mesh
+    # Invalidate derived fields that depend on cell ordering
+    if hasattr(mesh, "cell_neighbors"):
+        mesh.cell_neighbors = np.array([])
+    if hasattr(mesh, "cell_centroids"):
+        # we need to reorder centroids as well if they exist
+        if mesh.cell_centroids.size > 0:
+            mesh.cell_centroids = mesh.cell_centroids[new_order]
+    if hasattr(mesh, "_is_analyzed"):
+        setattr(mesh, "_is_analyzed", False)
 
 
 # --- Node Reordering ---
 
 
-def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
+def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> None:
     """
-    Renumbers the nodes of a mesh to optimize matrix bandwidth.
+    Renumbers the nodes of a mesh in-place to optimize matrix bandwidth.
 
-    This function creates a new mesh with renumbered nodes and updated
-    connectivity, leaving the original mesh unmodified.
+    This function modifies the mesh object directly.
 
     Args:
-        mesh: The input CoreMesh object.
+        mesh: The input CoreMesh object to be modified.
         strategy: The renumbering strategy. Options include 'rcm', 'sequential',
-                  'reverse', 'spatial_x', 'random'.
-
-    Returns:
-        A new CoreMesh object with renumbered nodes.
+                  'reverse', 'spatial_x', 'spatial_y', 'random'.
     """
     if mesh.num_nodes == 0:
-        return copy.deepcopy(mesh)
+        return
 
     # For node reordering, the adjacency is node-to-node
     rows, cols = [], []
@@ -294,28 +325,27 @@ def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> CoreMesh:
         new_order = np.random.permutation(mesh.num_nodes)
     elif strategy == "spatial_x":
         new_order = np.argsort(mesh.node_coords[:, 0])
+    elif strategy == "spatial_y":
+        new_order = np.argsort(mesh.node_coords[:, 1])
     else:
         raise NotImplementedError(
             f"Node renumbering strategy '{strategy}' is not implemented."
         )
 
-    # Create a deep copy to preserve the original mesh
-    new_mesh = copy.deepcopy(mesh)
-
     # Create the inverse mapping (old index -> new index)
     remap = np.empty_like(new_order)
     remap[new_order] = np.arange(mesh.num_nodes, dtype=int)
 
-    # Apply renumbering to the new mesh
-    new_mesh.node_coords = new_mesh.node_coords[new_order]
-    new_mesh.cell_connectivity = [
-        list(remap[np.array(c, dtype=int)]) for c in new_mesh.cell_connectivity
+    # Apply renumbering in-place
+    mesh.node_coords = mesh.node_coords[new_order]
+    mesh.cell_connectivity = [
+        list(remap[np.array(c, dtype=int)]) for c in mesh.cell_connectivity
     ]
 
     # Invalidate derived fields that depend on node/cell ordering
-    if hasattr(new_mesh, "cell_neighbors"):
-        new_mesh.cell_neighbors = np.array([])
-    if hasattr(new_mesh, "cell_centroids"):
-        new_mesh.cell_centroids = np.array([])
-
-    return new_mesh
+    if hasattr(mesh, "cell_neighbors"):
+        mesh.cell_neighbors = np.array([])
+    if hasattr(mesh, "cell_centroids"):
+        mesh.cell_centroids = np.array([])
+    if hasattr(mesh, "_is_analyzed"):
+        setattr(mesh, "_is_analyzed", False)
