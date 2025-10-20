@@ -43,7 +43,8 @@ def partition_mesh(
 
     if method == "metis":
         if not mesh.cell_neighbors.any():
-            mesh._extract_neighbors()
+            mesh._extract_cell_faces()
+            mesh._extract_cell_neighbors()
         adjacency = _get_adjacency(mesh)
         parts = _partition_with_metis(adjacency, n_parts, cell_weights)
     elif method == "hierarchical":

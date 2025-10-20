@@ -342,6 +342,9 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
     if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
         mesh.cell_centroids = mesh.cell_centroids[new_order]
 
+    if is_local:
+        mesh.l2g_cells = mesh.l2g_cells[new_order]
+
     # Invalidate derived fields that depend on cell ordering.
     if hasattr(mesh, "cell_neighbors"):
         mesh.cell_neighbors = np.array([])
@@ -402,6 +405,9 @@ def renumber_nodes(mesh: CoreMesh, strategy: str = "rcm") -> None:
     mesh.cell_connectivity = [
         list(remap[np.array(c, dtype=int)]) for c in mesh.cell_connectivity
     ]
+
+    if hasattr(mesh, "l2g_nodes"):
+        mesh.l2g_nodes = mesh.l2g_nodes[new_order]
 
     # Invalidate derived fields that depend on node/cell ordering.
     if hasattr(mesh, "cell_neighbors"):

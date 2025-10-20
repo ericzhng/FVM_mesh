@@ -88,6 +88,52 @@ def create_3x3_quad_mesh_fixture():
     return mesh, parts, n_parts
 
 
+def create_4x4_quad_mesh_fixture():
+    """
+    Provides a 4x4 quadrilateral mesh fixture for testing.
+
+    Returns:
+        tuple: A tuple containing:
+            - PolyMesh: The 4x4 mesh.
+            - np.ndarray: The partitioning array.
+            - int: The number of partitions.
+    """
+    mesh = create_structured_quad_mesh(4, 4)
+
+    # Partitioning (3 parts for 16 cells):
+    # - Rank 0 owns 6 cells
+    # - Rank 1 owns 5 cells
+    # - Rank 2 owns 5 cells
+    parts = np.array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
+    n_parts = 3
+
+    return mesh, parts, n_parts
+
+
+def create_5x5_quad_mesh_fixture():
+    """
+    Provides a 5x5 quadrilateral mesh fixture for testing.
+
+    Returns:
+        tuple: A tuple containing:
+            - PolyMesh: The 5x5 mesh.
+            - np.ndarray: The partitioning array.
+            - int: The number of partitions.
+    """
+    mesh = create_structured_quad_mesh(5, 5)
+
+    # Partitioning (3 parts for 25 cells):
+    # - Rank 0 owns 9 cells
+    # - Rank 1 owns 8 cells
+    # - Rank 2 owns 8 cells
+    parts = np.array(
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2]
+    )
+    n_parts = 3
+
+    return mesh, parts, n_parts
+
+
 def make_test_mesh():
     """Creates a test mesh from a file."""
     msh_file = os.path.join(

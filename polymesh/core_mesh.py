@@ -57,6 +57,7 @@ class CoreMesh:
         self.cell_type_map: Dict[int, Dict[str, Any]] = {}
 
         # Derived info for adjacency
+        self.cell_faces: List[List[List[int]]] = []
         self.cell_neighbors: np.ndarray = np.array([])
         self.cell_centroids: np.ndarray = np.array([])
 
@@ -205,19 +206,19 @@ class CoreMesh:
                 "No cells available. Call read_gmsh or populate cells first"
             )
         self._compute_centroids()
-        self._extract_neighbors()
+        self._extract_cell_faces()
+        if self.cell_neighbors.size == 0:
+            self._extract_cell_neighbors()
 
         self._is_analyzed = True  # Set flag after successful analysis
 
-    def _extract_neighbors(self) -> None:
+    def _extract_cell_faces(self) -> None:
         """
-        Extract cell-to-cell neighbor connectivity.
+        Extracts the faces for each cell in the mesh.
 
-        This method determines which cells are adjacent to each other by
-        identifying shared faces. The results are stored in the
-        `cell_neighbors` attribute.
+        This method populates `self.cell_faces` with a list of faces for each cell.
+        A face is defined by a list of node indices.
         """
-        # Face templates for common element node counts (3D); 2D handled generically
         face_templates = {
             4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # Tet
             8: [
@@ -236,7 +237,8 @@ class CoreMesh:
                 [2, 0, 3, 5],
             ],  # Wedge
         }
-        cell_faces = []
+
+        cell_faces_list = []
         for conn in self.cell_connectivity:
             n = len(conn)
             if self.dimension == 2:
@@ -249,21 +251,31 @@ class CoreMesh:
                 faces = [[conn[idx] for idx in face] for face in face_templates[n]]
             else:
                 faces = []
-            cell_faces.append(faces)
+            cell_faces_list.append(faces)
+        self.cell_faces = cell_faces_list
 
-        if not cell_faces:
+    def _extract_cell_neighbors(self) -> None:
+        """
+        Extracts cell-to-cell neighbor connectivity using pre-extracted cell faces.
+
+        This method uses `self.cell_faces` to determine which cells are adjacent
+        and stores the result in `self.cell_neighbors`.
+        """
+        if not self.cell_faces:
             self.cell_neighbors = np.array([])
             return
 
-        max_faces = max(len(f) for f in cell_faces)
-        num = self.num_cells
-        neighbors = -np.ones((num, max_faces), dtype=int)
+        max_faces = max(len(f) for f in self.cell_faces)
+        num_cells = self.num_cells
+        neighbors = -np.ones((num_cells, max_faces), dtype=int)
+
         face_map: Dict[Tuple[int, ...], List[int]] = {}
-        for ci, faces in enumerate(cell_faces):
+        for ci, faces in enumerate(self.cell_faces):
             for face in faces:
                 key = tuple(sorted(face))
                 face_map.setdefault(key, []).append(ci)
-        for ci, faces in enumerate(cell_faces):
+
+        for ci, faces in enumerate(self.cell_faces):
             for fi, face in enumerate(faces):
                 key = tuple(sorted(face))
                 elems = face_map.get(key, [])
@@ -280,7 +292,13 @@ class CoreMesh:
             [np.mean(self.node_coords[c], axis=0) for c in self.cell_connectivity]
         )
 
-    def plot(self, filepath: str = "mesh_plot.png", parts: np.ndarray | None = None):
+    def plot(
+        self,
+        filepath: str = "mesh_plot.png",
+        parts: np.ndarray | None = None,
+        show_cells: bool = True,
+        show_nodes: bool = True,
+    ) -> None:
         """
         Plot the mesh and save it to a file.
 
@@ -305,8 +323,8 @@ class CoreMesh:
             ax,
             self.node_coords[:, :2],
             self.cell_connectivity,
-            show_nodes=True,
-            show_cells=True,
+            show_nodes=show_nodes,
+            show_cells=show_cells,
             parts=parts,
             title="Mesh Plot",
         )

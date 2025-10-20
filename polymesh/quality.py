@@ -67,7 +67,9 @@ class MeshQuality:
         """Calculate the ratio of the smallest to the largest cell volume."""
         min_volume = np.min(mesh.cell_volumes)
         max_volume = np.max(mesh.cell_volumes)
-        self.min_max_volume_ratio = min_volume / max_volume if max_volume > 1e-12 else 0.0
+        self.min_max_volume_ratio = (
+            min_volume / max_volume if max_volume > 1e-12 else 0.0
+        )
 
     def _compute_geometric_metrics(self, mesh) -> None:
         """
@@ -103,11 +105,13 @@ class MeshQuality:
             return
 
         # Angle-based skewness
-        angles = np.degrees([
-            np.arccos(np.dot(-v2, v0) / (lengths[2] * lengths[0])),
-            np.arccos(np.dot(-v0, v1) / (lengths[0] * lengths[1])),
-            np.arccos(np.dot(-v1, v2) / (lengths[1] * lengths[2]))
-        ])
+        angles = np.degrees(
+            [
+                np.arccos(np.dot(-v2, v0) / (lengths[2] * lengths[0])),
+                np.arccos(np.dot(-v0, v1) / (lengths[0] * lengths[1])),
+                np.arccos(np.dot(-v1, v2) / (lengths[1] * lengths[2])),
+            ]
+        )
         self.cell_skewness_values[index] = np.max(np.abs(angles - 60.0)) / 60.0
 
         # Aspect ratio
@@ -116,9 +120,9 @@ class MeshQuality:
     def _compute_quad_metrics(self, index: int, nodes: np.ndarray) -> None:
         """Compute skewness and aspect ratio for a single quadrilateral cell."""
         # Edge lengths
-        edge_lengths = np.array([
-            np.linalg.norm(nodes[j] - nodes[(j + 1) % 4]) for j in range(4)
-        ])
+        edge_lengths = np.array(
+            [np.linalg.norm(nodes[j] - nodes[(j + 1) % 4]) for j in range(4)]
+        )
 
         if np.min(edge_lengths) < 1e-12:
             self.cell_skewness_values[index] = 1.0  # Degenerate
@@ -132,10 +136,14 @@ class MeshQuality:
             v2 = nodes[(j + 1) % 4] - nodes[j]
             dot_p = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
             angles.append(np.degrees(np.arccos(np.clip(dot_p, -1.0, 1.0))))
-        self.cell_skewness_values[index] = np.max(np.abs(np.array(angles) - 90.0)) / 90.0
+        self.cell_skewness_values[index] = (
+            np.max(np.abs(np.array(angles) - 90.0)) / 90.0
+        )
 
         # Aspect ratio
-        self.cell_aspect_ratio_values[index] = np.max(edge_lengths) / np.min(edge_lengths)
+        self.cell_aspect_ratio_values[index] = np.max(edge_lengths) / np.min(
+            edge_lengths
+        )
 
     def _compute_non_orthogonality(self, mesh) -> None:
         """
@@ -147,7 +155,8 @@ class MeshQuality:
         for ci in range(mesh.num_cells):
             max_non_ortho = 0.0
             for fi, _ in enumerate(mesh.cell_faces[ci]):
-                if fi >= mesh.face_midpoints.shape[1]: continue
+                if fi >= mesh.face_midpoints.shape[1]:
+                    continue
 
                 vec_to_face = mesh.face_midpoints[ci, fi] - mesh.cell_centroids[ci]
                 norm_vec = np.linalg.norm(vec_to_face)
@@ -168,7 +177,9 @@ class MeshQuality:
         referenced_nodes = set(node for conn in mesh.cell_connectivity for node in conn)
         unreferenced = all_nodes - referenced_nodes
         if unreferenced:
-            self.connectivity_issues.append(f"Found {len(unreferenced)} unreferenced nodes.")
+            self.connectivity_issues.append(
+                f"Found {len(unreferenced)} unreferenced nodes."
+            )
 
         # Check for duplicate cells
         unique_cells = set()
@@ -210,16 +221,28 @@ class MeshQuality:
 
         if self.cell_skewness_values.size > 0 and np.any(self.cell_skewness_values):
             vals = self.cell_skewness_values
-            print(f"  {'Skewness':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
+            print(
+                f"  {'Skewness':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}"
+            )
 
-        if self.cell_non_orthogonality_values.size > 0 and np.any(self.cell_non_orthogonality_values):
+        if self.cell_non_orthogonality_values.size > 0 and np.any(
+            self.cell_non_orthogonality_values
+        ):
             vals = self.cell_non_orthogonality_values
-            print(f"  {'Non-Orthogonality (deg)':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
+            print(
+                f"  {'Non-Orthogonality (deg)':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}"
+            )
 
-        if self.cell_aspect_ratio_values.size > 0 and np.any(self.cell_aspect_ratio_values):
-            vals = self.cell_aspect_ratio_values[np.isfinite(self.cell_aspect_ratio_values)]
+        if self.cell_aspect_ratio_values.size > 0 and np.any(
+            self.cell_aspect_ratio_values
+        ):
+            vals = self.cell_aspect_ratio_values[
+                np.isfinite(self.cell_aspect_ratio_values)
+            ]
             if vals.size > 0:
-                print(f"  {'Aspect Ratio':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}")
+                print(
+                    f"  {'Aspect Ratio':<25} {np.min(vals):>15.4f} {np.max(vals):>15.4f} {np.mean(vals):>15.4f}"
+                )
 
         print(f"\n{'--- Connectivity Check ---':^80}\n")
         if self.connectivity_issues:

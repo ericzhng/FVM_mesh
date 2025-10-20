@@ -32,9 +32,7 @@ class PolyMesh(CoreMesh):
         super().__init__()
 
         # Computed geometric fields
-        self.cell_centroids: np.ndarray = np.array([])
         self.cell_volumes: np.ndarray = np.array([])
-        self.cell_faces: List[List[List[int]]] = []
         self.face_midpoints: np.ndarray = np.array([])
         self.face_normals: np.ndarray = np.array([])
         self.face_areas: np.ndarray = np.array([])
@@ -71,55 +69,11 @@ class PolyMesh(CoreMesh):
             raise RuntimeError(
                 "No cells available. Call read_gmsh or populate cells first."
             )
-        super().analyze_mesh()  # Computes centroids and neighbors
+        super().analyze_mesh()  # Computes centroids, neighbors, and cell_faces
 
-        self._extract_cell_faces()
         self._compute_face_midpoints_areas_normals()
         self._compute_cell_volumes()
         self._is_analyzed = True  # Set flag after successful analysis
-
-    def _extract_cell_faces(self) -> None:
-        """
-        Extract the faces for each cell based on its connectivity and dimension.
-
-        This method uses predefined templates for common 3D element types and
-        generates faces dynamically for 2D polygons. The results are stored in
-        `self.cell_faces`.
-        """
-        # Face templates for common 3D element node counts
-        face_templates = {
-            4: [[0, 1, 2], [0, 3, 1], [1, 3, 2], [2, 0, 3]],  # Tet
-            8: [
-                [0, 1, 2, 3],
-                [4, 5, 6, 7],
-                [0, 1, 5, 4],
-                [1, 2, 6, 5],
-                [2, 3, 7, 6],
-                [3, 0, 4, 7],
-            ],  # Hex
-            6: [
-                [0, 1, 2],
-                [3, 4, 5],
-                [0, 1, 4, 3],
-                [1, 2, 5, 4],
-                [2, 0, 3, 5],
-            ],  # Wedge
-        }
-        self.cell_faces = []
-        for conn in self.cell_connectivity:
-            n = len(conn)
-            if self.dimension == 2:
-                # For 2D cells, faces are the edges
-                faces = [[conn[i], conn[(i + 1) % n]] for i in range(n)]
-            elif self.dimension == 3:
-                if n not in face_templates:
-                    raise NotImplementedError(
-                        f"3D element with {n} nodes is not supported for face extraction."
-                    )
-                faces = [[conn[idx] for idx in face] for face in face_templates[n]]
-            else:
-                faces = []
-            self.cell_faces.append(faces)
 
     def _compute_face_midpoints_areas_normals(self) -> None:
         """
