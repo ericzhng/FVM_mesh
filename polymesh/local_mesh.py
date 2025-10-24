@@ -76,7 +76,10 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
                 halo_from_neighbors_g[neighbor_rank] = cells_to_recv
                 halo_cells_g.extend(cells_to_recv)
 
-        g2l_halo_map = {g: l for l, g in enumerate(halo_cells_g)}
+        # The final local index for a halo cell is its position in the halo list
+        # PLUS the number of owned cells.
+        # e.g., if num_owned_cells is 100, the first halo cell has local index 100.
+        g2l_halo_map = {g: l + len(owned_cells_g) for l, g in enumerate(halo_cells_g)}
 
         send_map_local: Dict[int, List[int]] = {}
         my_sends_g = global_send_map.get(rank, {})
@@ -169,7 +172,9 @@ class LocalMesh(PolyMesh):
         self.use_reordered_nodes = False
 
     @classmethod
-    def from_global_mesh(cls, global_mesh: CoreMesh, parts: np.ndarray, rank: int, halo_info: Dict):
+    def from_global_mesh(
+        cls, global_mesh: CoreMesh, parts: np.ndarray, rank: int, halo_info: Dict
+    ):
         """
         Factory method to construct a LocalMesh for a specific partition.
 
@@ -219,6 +224,10 @@ class LocalMesh(PolyMesh):
                 if neighbor_g in g2l_cells:
                     cell_neighbors[l_idx, i] = g2l_cells[neighbor_g]
 
+        # 5. Update send and recv maps to local indices
+        # (Already done in halo_info passed to this method)
+
+        # 6. Create LocalMesh instance
         local_mesh = cls(
             rank=rank,
             num_owned_cells=num_owned_cells,

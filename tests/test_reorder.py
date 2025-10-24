@@ -5,7 +5,7 @@ import copy
 
 from polymesh.reorder import renumber_cells, renumber_nodes
 from polymesh.core_mesh import CoreMesh
-from polymesh.local_mesh import LocalMesh
+from polymesh.local_mesh import LocalMesh, _compute_halo_indices
 from tests.common_meshes import create_2x2_quad_mesh_fixture
 
 
@@ -159,7 +159,11 @@ class TestRenumberLocalMesh(unittest.TestCase):
     def setUp(self):
         self.global_mesh, self.parts, _ = create_2x2_quad_mesh_fixture()
         self.rank = 0
-        self.local_mesh = LocalMesh(self.global_mesh, self.parts, self.rank)
+        self.halo_indices = _compute_halo_indices(self.global_mesh, self.parts)
+
+        self.local_mesh = LocalMesh.from_global_mesh(
+            self.global_mesh, self.parts, self.rank, self.halo_indices[self.rank]
+        )
         self.tmp_path = "results/reorder"
         os.makedirs(self.tmp_path, exist_ok=True)
 

@@ -25,7 +25,8 @@ class TestCoreMesh(unittest.TestCase):
 
     def test_extract_neighbors(self):
         """Test the neighbor extraction functionality."""
-        self.mesh._extract_neighbors()
+        self.mesh._extract_cell_faces()
+        self.mesh._extract_cell_neighbors()
         self.assertIsNotNone(self.mesh.cell_neighbors)
         self.assertEqual(self.mesh.cell_neighbors.shape[0], self.mesh.num_cells)
         # Check if there are any valid neighbors (not -1)

@@ -7,7 +7,7 @@ import numpy as np
 from typing import List
 
 from polymesh.poly_mesh import PolyMesh
-from polymesh.local_mesh import LocalMesh, create_local_meshes
+from polymesh.local_mesh import LocalMesh, _compute_halo_indices, create_local_meshes
 from polymesh.partition import partition_mesh, print_partition_summary
 from tests.common_meshes import create_5x5_quad_mesh_fixture
 
@@ -121,7 +121,7 @@ class TestWorkflow(unittest.TestCase):
         local_meshes = create_local_meshes(
             global_mesh,
             parts=parts,
-            reorder_cells_strategy="",
+            reorder_cells_strategy="rcm",
             reorder_nodes_strategy="",
         )
         self.assertEqual(len(local_meshes), n_parts)
