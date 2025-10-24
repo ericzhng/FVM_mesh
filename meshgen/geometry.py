@@ -8,27 +8,51 @@ from scipy.spatial import ConvexHull
 
 
 class Geometry:
-    """A class to create and manage 2D geometries using gmsh."""
+    """
+    A class to create and manage 2D geometries using gmsh.
+
+    This class provides methods to create various 2D shapes, plot the geometry,
+    and compute its bounding box.
+
+    Attributes:
+        name (str): The name of the geometry.
+    """
 
     def __init__(self, name: str = ""):
+        """
+        Initializes the Geometry class.
+
+        Args:
+            name (str, optional): The name of the geometry. Defaults to "Default Geometry".
+        """
         self.name = name or "Default Geometry"
 
     def get_bounding_box(self) -> Tuple[float, float, float, float]:
-        """Computes the bounding box of the entire geometry."""
+        """
+        Computes the bounding box of the entire geometry.
+
+        Returns:
+            Tuple[float, float, float, float]: A tuple containing the minimum and maximum
+                                               x and y coordinates (min_x, min_y, max_x, max_y).
+        """
         gmsh.model.geo.synchronize()
         min_x, min_y, _, max_x, max_y, _ = gmsh.model.getBoundingBox(-1, -1)
         return min_x, min_y, max_x, max_y
 
     def plot(self, file_path: str = "geometry.png"):
-        """Plots the wireframe of the current gmsh model."""
+        """
+        Plots the wireframe of the current gmsh model and saves it to a file.
+
+        Args:
+            file_path (str, optional): The path to save the plot image. Defaults to "geometry.png".
+        """
         plt.figure()
 
         # Generate 1D mesh to get nodes on curves
         gmsh.model.mesh.generate(1)
 
-        for e in gmsh.model.getEntities(1):  # 1D entities (lines and curves)
+        for e in gmsh.model.getEntities(1):
             curve_tag = e[1]
-
             _, node_coords, _ = gmsh.model.mesh.getNodes(
                 dim=1, tag=curve_tag, includeBoundary=True
             )
@@ -48,10 +72,9 @@ class Geometry:
                     # Sort points based on their parametric coordinates
                     sorted_indices = np.argsort(parametric_coords)
                     points = points[sorted_indices]
-
                 plt.plot(points[:, 0], points[:, 1], "k-")
 
-        plt.title(f"{self.name}")
+        plt.title(self.name)
         plt.xlabel("X")
         plt.ylabel("Y")
         plt.grid(True)
@@ -68,12 +91,21 @@ class Geometry:
         convex_hull: bool = False,
         mesh_size: float = 0.1,
     ) -> int:
-        """Creates a gmsh geometry from a list of 2D points."""
+        """
+        Creates a gmsh geometry from a list of 2D points.
+
+        Args:
+            points (List[Tuple[float, float]]): A list of (x, y) coordinates for the polygon's vertices.
+            convex_hull (bool, optional): If True, computes the convex hull of the points. Defaults to False.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            int: The tag of the created surface.
+        """
         if len(points) < 3:
             raise ValueError("At least 3 points are required to create a polygon.")
 
         points_np = np.array(points)
-
         if convex_hull:
             hull = ConvexHull(points_np)
             processed_points = points_np[hull.vertices]
@@ -103,7 +135,19 @@ class Geometry:
         y: float = 0.0,
         mesh_size: float = 0.1,
     ) -> int:
-        """Creates a rectangular geometry in gmsh."""
+        """
+        Creates a rectangular geometry in gmsh.
+
+        Args:
+            length (float): The length of the rectangle.
+            width (float): The width of the rectangle.
+            x (float, optional): The x-coordinate of the bottom-left corner. Defaults to 0.0.
+            y (float, optional): The y-coordinate of the bottom-left corner. Defaults to 0.0.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            int: The tag of the created surface.
+        """
         rectangle = gmsh.model.occ.addRectangle(x, y, 0, length, width)
         gmsh.model.occ.synchronize()
         return rectangle
@@ -111,7 +155,18 @@ class Geometry:
     def circle(
         self, radius: float, x: float = 0.0, y: float = 0.0, mesh_size: float = 0.1
     ) -> int:
-        """Creates a circular geometry in gmsh."""
+        """
+        Creates a circular geometry in gmsh.
+
+        Args:
+            radius (float): The radius of the circle.
+            x (float, optional): The x-coordinate of the center. Defaults to 0.0.
+            y (float, optional): The y-coordinate of the center. Defaults to 0.0.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            int: The tag of the created surface.
+        """
         center = gmsh.model.geo.addPoint(x, y, 0, mesh_size)
         p1 = gmsh.model.geo.addPoint(x + radius, y, 0, mesh_size)
         p2 = gmsh.model.geo.addPoint(x, y + radius, 0, mesh_size)
@@ -138,7 +193,18 @@ class Geometry:
         p3: Tuple[float, float],
         mesh_size: float = 0.1,
     ) -> int:
-        """Creates a triangular geometry in gmsh."""
+        """
+        Creates a triangular geometry in gmsh.
+
+        Args:
+            p1 (Tuple[float, float]): The coordinates of the first vertex.
+            p2 (Tuple[float, float]): The coordinates of the second vertex.
+            p3 (Tuple[float, float]): The coordinates of the third vertex.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            int: The tag of the created surface.
+        """
         pt1 = gmsh.model.geo.addPoint(p1[0], p1[1], 0, mesh_size)
         pt2 = gmsh.model.geo.addPoint(p2[0], p2[1], 0, mesh_size)
         pt3 = gmsh.model.geo.addPoint(p3[0], p3[1], 0, mesh_size)
@@ -162,7 +228,19 @@ class Geometry:
         y: float = 0.0,
         mesh_size: float = 0.1,
     ) -> int:
-        """Creates an elliptical geometry in gmsh."""
+        """
+        Creates an elliptical geometry in gmsh.
+
+        Args:
+            r1 (float): The radius along the x-axis.
+            r2 (float): The radius along the y-axis.
+            x (float, optional): The x-coordinate of the center. Defaults to 0.0.
+            y (float, optional): The y-coordinate of the center. Defaults to 0.0.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            int: The tag of the created surface.
+        """
         center = gmsh.model.geo.addPoint(x, y, 0, mesh_size)
         p1 = gmsh.model.geo.addPoint(x + r1, y, 0, mesh_size)
         p2 = gmsh.model.geo.addPoint(x, y + r2, 0, mesh_size)
@@ -190,13 +268,26 @@ class Geometry:
         y: float = 0.0,
         mesh_size: float = 0.1,
     ) -> list:
-        """Creates a rectangular geometry with partitions using fragmentation."""
+        """
+        Creates a rectangular geometry with partitions using fragmentation.
+
+        This method creates a rectangle and divides it into four smaller rectangles
+        by fragmenting it with horizontal and vertical lines.
+
+        Args:
+            length (float): The length of the rectangle.
+            width (float): The width of the rectangle.
+            x (float, optional): The x-coordinate of the bottom-left corner. Defaults to 0.0.
+            y (float, optional): The y-coordinate of the bottom-left corner. Defaults to 0.0.
+            mesh_size (float, optional): The characteristic length for the mesh. Defaults to 0.1.
+
+        Returns:
+            list: A list of tags for the new surfaces created by fragmentation.
+        """
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", mesh_size)
 
-        # Create the main rectangle
         rectangle = gmsh.model.occ.addRectangle(x, y, 0, length, width)
 
-        # Create partitioning lines (tools)
         p_mid_y1 = gmsh.model.occ.addPoint(x, y + width / 2, 0, mesh_size)
         p_mid_y2 = gmsh.model.occ.addPoint(x + length, y + width / 2, 0, mesh_size)
         line_horiz = gmsh.model.occ.addLine(p_mid_y1, p_mid_y2)
@@ -212,6 +303,5 @@ class Geometry:
 
         gmsh.model.occ.synchronize()
 
-        # Return the new surfaces
         surfaces = [s[1] for s in fragmented_entities[0] if s[0] == 2]
         return surfaces

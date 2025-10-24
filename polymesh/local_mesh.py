@@ -1,4 +1,26 @@
 # -*- coding: utf-8 -*-
+"""
+Tools for creating and managing local meshes in a distributed environment.
+
+This module provides the `LocalMesh` class and related functions to manage
+partitioned meshes for parallel computations. A `LocalMesh` represents the
+portion of a global mesh assigned to a single process, including both the cells
+owned by that process and the necessary halo cells from neighboring partitions.
+
+Key Features:
+- Creation of `LocalMesh` objects from a partitioned `CoreMesh`.
+- Management of mappings between local and global indices for cells and nodes.
+- Handling of halo cell information and communication maps (send/recv).
+- In-place reordering of cells and nodes to optimize performance.
+
+Classes:
+    LocalMesh: Represents the mesh for a single partition in a distributed setup.
+
+Functions:
+    create_local_meshes: Partitions a global mesh and creates a list of local
+        mesh objects.
+"""
+
 import copy
 from typing import Dict, List, Set, Sequence, Optional
 
@@ -13,9 +35,7 @@ from .partition import partition_mesh, print_partition_summary
 def _find_send_candidates(
     mesh: CoreMesh, parts: np.ndarray
 ) -> Dict[int, Dict[int, List[int]]]:
-    """
-    Determines which cells each partition needs to send to its neighbors.
-    """
+    """Determines which cells each partition needs to send to its neighbors."""
     n_parts = int(np.max(parts) + 1) if parts.size > 0 else 0
     send_candidates: Dict[int, Dict[int, Set[int]]] = {r: {} for r in range(n_parts)}
 
@@ -39,13 +59,11 @@ def _find_send_candidates(
 
 
 def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
-    """
-    Builds communication maps for halo exchange between partitions.
-    """
+    """Builds communication maps for halo exchange between partitions."""
     n_parts = int(np.max(parts) + 1) if parts.size > 0 else 0
     if n_parts <= 1:
-        if mesh.num_cells > 0:
-            return {
+        return (
+            {
                 0: {
                     "owned_cells": list(range(mesh.num_cells)),
                     "halo_cells": [],
@@ -53,26 +71,26 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
                     "recv": {},
                 }
             }
-        return {}
+            if mesh.num_cells > 0
+            else {}
+        )
 
     global_send_map = _find_send_candidates(mesh, parts)
-
     out: Dict[int, Dict] = {}
+
     for rank in range(n_parts):
         owned_cells_g = np.where(parts == rank)[0]
         g2l_owned_map = {g: l for l, g in enumerate(owned_cells_g)}
 
         halo_cells_g: List[int] = []
         halo_from_neighbors_g: Dict[int, List[int]] = {}
-
         all_neighbors = set(global_send_map.get(rank, {}).keys())
         for r, send_map in global_send_map.items():
             if rank in send_map:
                 all_neighbors.add(r)
 
         for neighbor_rank in sorted(list(all_neighbors)):
-            cells_to_recv = global_send_map.get(neighbor_rank, {}).get(rank)
-            if cells_to_recv:
+            if cells_to_recv := global_send_map.get(neighbor_rank, {}).get(rank):
                 halo_from_neighbors_g[neighbor_rank] = cells_to_recv
                 halo_cells_g.extend(cells_to_recv)
 
@@ -98,7 +116,6 @@ def _compute_halo_indices(mesh: CoreMesh, parts: np.ndarray) -> Dict:
             "send": send_map_local,
             "recv": recv_map_local,
         }
-
     return out
 
 
@@ -106,43 +123,27 @@ def _remap_connectivity(
     global_conn: Sequence[np.ndarray], g2l_map: Dict[int, int]
 ) -> List[List[int]]:
     """Remaps a global connectivity sequence to a local one."""
-    local_conn = []
-    for item_conn_g in global_conn:
-        local_conn.append([g2l_map[g] for g in item_conn_g])
-    return local_conn
+    return [[g2l_map[g] for g in item_conn_g] for item_conn_g in global_conn]
 
 
 class LocalMesh(PolyMesh):
     """
-    Represents the mesh for a single partition (process) in a distributed setup.
+    Represents the mesh for a single partition in a distributed setup.
 
-    This class is central to parallel FVM computations. It holds the geometric
-    and topological data for a subset of the global mesh, including cells owned
-    by the current process and "halo" cells owned by neighboring processes.
-    Halo cells are required for computing gradients and fluxes at partition
-    boundaries.
-
-    All entities (nodes, cells) are renumbered into a local, contiguous,
-    0-based index space for computational efficiency. Crucially, this class
-    maintains mappings (`l2g_cells`, `l2g_nodes`) to recover the original
-    global indices, which is essential for assembling results from all
-    partitions back into a global solution.
-
-    The class provides methods to reorder cells and nodes, which can
-    significantly improve cache efficiency and solver performance.
+    This class holds the geometric and topological data for a subset of the
+    global mesh, including cells owned by the current process and "halo" cells
+    from neighboring processes.
 
     Attributes:
         rank (int): The rank of the partition this mesh belongs to.
         num_owned_cells (int): The number of cells owned by this partition.
         num_halo_cells (int): The number of halo cells.
-        l2g_cells (np.ndarray): Map from local cell ID to global cell ID.
-        g2l_cells (Dict[int, int]): Map from global cell ID to local cell ID.
-        l2g_nodes (np.ndarray): Map from local node ID to global node ID.
-        g2l_nodes (Dict[int, int]): Map from global node ID to local node ID.
+        l2g_cells (np.ndarray): Map from local to global cell indices.
+        g2l_cells (Dict[int, int]): Map from global to local cell indices.
+        l2g_nodes (np.ndarray): Map from local to global node indices.
+        g2l_nodes (Dict[int, int]): Map from global to local node indices.
         send_map (Dict[int, List[int]]): Halo communication map for sending data.
         recv_map (Dict[int, List[int]]): Halo communication map for receiving data.
-        use_reordered_cells (bool): Flag indicating if cells are reordered.
-        use_reordered_nodes (bool): Flag indicating if nodes are reordered.
     """
 
     def __init__(
@@ -167,20 +168,15 @@ class LocalMesh(PolyMesh):
         self.g2l_nodes = g2l_nodes
         self.send_map = send_map
         self.recv_map = recv_map
-
         self.use_reordered_cells = False
         self.use_reordered_nodes = False
 
     @classmethod
     def from_global_mesh(
         cls, global_mesh: CoreMesh, parts: np.ndarray, rank: int, halo_info: Dict
-    ):
+    ) -> "LocalMesh":
         """
         Factory method to construct a LocalMesh for a specific partition.
-
-        This method encapsulates the complex process of extracting a partition's
-        data from a global mesh, including owned cells, halo cells, and all
-        necessary mappings and connectivity.
 
         Args:
             global_mesh: The complete, unpartitioned mesh.
@@ -191,47 +187,13 @@ class LocalMesh(PolyMesh):
         if not global_mesh.cell_neighbors.size > 0:
             global_mesh.analyze_mesh()
 
-        # 1. Initialize cell maps
-        owned_cells_g = halo_info["owned_cells"]
-        halo_cells_g = halo_info["halo_cells"]
-        num_owned_cells = len(owned_cells_g)
-        num_halo_cells = len(halo_cells_g)
-        l2g_cells = np.array(owned_cells_g + halo_cells_g, dtype=int)
-        g2l_cells = {g: l for l, g in enumerate(l2g_cells)}
+        l2g_cells, g2l_cells = cls._initialize_cell_maps(halo_info)
+        l2g_nodes, g2l_nodes = cls._initialize_node_maps(global_mesh, l2g_cells)
 
-        # 2. Initialize node maps
-        local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in l2g_cells]
-        unique_node_g_indices = np.unique(np.concatenate(local_cell_nodes_g))
-        l2g_nodes = unique_node_g_indices
-        g2l_nodes = {g: l for l, g in enumerate(l2g_nodes)}
-
-        # 3. Build local mesh data
-        node_coords = global_mesh.node_coords[l2g_nodes]
-        cell_connectivity = _remap_connectivity(
-            [global_mesh.cell_connectivity[g] for g in l2g_cells], g2l_nodes
-        )
-        if global_mesh.cell_type_ids.size > 0:
-            cell_type_ids = global_mesh.cell_type_ids[l2g_cells]
-        else:
-            cell_type_ids = np.array([])
-
-        # 4. Build local neighbors
-        num_local_cells = len(cell_connectivity)
-        max_faces = global_mesh.cell_neighbors.shape[1]
-        cell_neighbors = -np.ones((num_local_cells, max_faces), dtype=int)
-        for l_idx, g_idx in enumerate(l2g_cells):
-            for i, neighbor_g in enumerate(global_mesh.cell_neighbors[g_idx]):
-                if neighbor_g in g2l_cells:
-                    cell_neighbors[l_idx, i] = g2l_cells[neighbor_g]
-
-        # 5. Update send and recv maps to local indices
-        # (Already done in halo_info passed to this method)
-
-        # 6. Create LocalMesh instance
         local_mesh = cls(
             rank=rank,
-            num_owned_cells=num_owned_cells,
-            num_halo_cells=num_halo_cells,
+            num_owned_cells=len(halo_info["owned_cells"]),
+            num_halo_cells=len(halo_info["halo_cells"]),
             l2g_cells=l2g_cells,
             g2l_cells=g2l_cells,
             l2g_nodes=l2g_nodes,
@@ -240,22 +202,56 @@ class LocalMesh(PolyMesh):
             recv_map=halo_info["recv"],
         )
 
-        local_mesh.node_coords = node_coords
-        local_mesh.cell_connectivity = cell_connectivity
+        cls._build_local_mesh_data(local_mesh, global_mesh)
+        local_mesh.analyze_mesh()
+        local_mesh._store_original_ordering()
+        return local_mesh
+
+    @staticmethod
+    def _initialize_cell_maps(halo_info: Dict) -> tuple[np.ndarray, Dict[int, int]]:
+        """Initializes local-to-global and global-to-local cell maps."""
+        l2g_cells = np.array(
+            halo_info["owned_cells"] + halo_info["halo_cells"], dtype=int
+        )
+        g2l_cells = {g: l for l, g in enumerate(l2g_cells)}
+        return l2g_cells, g2l_cells
+
+    @staticmethod
+    def _initialize_node_maps(
+        global_mesh: CoreMesh, l2g_cells: np.ndarray
+    ) -> tuple[np.ndarray, Dict[int, int]]:
+        """Initializes local-to-global and global-to-local node maps."""
+        local_cell_nodes_g = [global_mesh.cell_connectivity[g] for g in l2g_cells]
+        unique_node_g_indices = np.unique(np.concatenate(local_cell_nodes_g))
+        g2l_nodes = {g: l for l, g in enumerate(unique_node_g_indices)}
+        return unique_node_g_indices, g2l_nodes
+
+    @staticmethod
+    def _build_local_mesh_data(local_mesh: "LocalMesh", global_mesh: CoreMesh) -> None:
+        """Populates the LocalMesh with data from the global mesh."""
+        local_mesh.node_coords = global_mesh.node_coords[local_mesh.l2g_nodes]
+        local_mesh.cell_connectivity = _remap_connectivity(
+            [global_mesh.cell_connectivity[g] for g in local_mesh.l2g_cells],
+            local_mesh.g2l_nodes,
+        )
+        if global_mesh.cell_type_ids.size > 0:
+            local_mesh.cell_type_ids = global_mesh.cell_type_ids[local_mesh.l2g_cells]
+
+        num_local_cells = len(local_mesh.cell_connectivity)
+        max_faces = global_mesh.cell_neighbors.shape[1]
+        cell_neighbors = -np.ones((num_local_cells, max_faces), dtype=int)
+        for l_idx, g_idx in enumerate(local_mesh.l2g_cells):
+            for i, neighbor_g in enumerate(global_mesh.cell_neighbors[g_idx]):
+                if neighbor_g in local_mesh.g2l_cells:
+                    cell_neighbors[l_idx, i] = local_mesh.g2l_cells[neighbor_g]
         local_mesh.cell_neighbors = cell_neighbors
-        local_mesh.cell_type_ids = cell_type_ids
+
         local_mesh.cell_type_map = copy.deepcopy(global_mesh.cell_type_map)
         local_mesh.dimension = global_mesh.dimension
-
         local_mesh.num_cells = len(local_mesh.cell_connectivity)
         local_mesh.num_nodes = local_mesh.node_coords.shape[0]
 
-        local_mesh.analyze_mesh()
-        local_mesh._store_original_ordering()
-
-        return local_mesh
-
-    def _store_original_ordering(self):
+    def _store_original_ordering(self) -> None:
         """Stores the initial state of the mesh before any reordering."""
         self._original_l2g_cells = self.l2g_cells.copy()
         self._original_g2l_cells = self.g2l_cells.copy()
@@ -269,7 +265,7 @@ class LocalMesh(PolyMesh):
         self._original_send_map = copy.deepcopy(self.send_map)
         self._original_recv_map = copy.deepcopy(self.recv_map)
 
-    def _restore_original_cell_ordering(self):
+    def _restore_original_cell_ordering(self) -> None:
         """Restores the mesh to its original cell ordering."""
         self.l2g_cells = self._original_l2g_cells.copy()
         self.g2l_cells = self._original_g2l_cells.copy()
@@ -281,56 +277,52 @@ class LocalMesh(PolyMesh):
         self.recv_map = copy.deepcopy(self._original_recv_map)
         self.use_reordered_cells = False
 
-    def _restore_original_node_ordering(self):
+    def _restore_original_node_ordering(self) -> None:
         """Restores the mesh to its original node ordering."""
         self.l2g_nodes = self._original_l2g_nodes.copy()
         self.g2l_nodes = self._original_g2l_nodes.copy()
         self.node_coords = self._original_node_coords.copy()
-        # Connectivity must be restored to its state before node reordering
         self.cell_connectivity = copy.deepcopy(self._original_cell_connectivity)
         self.use_reordered_nodes = False
 
-    def reorder_cells(self, strategy: str = "rcm", active: bool = True):
+    def reorder_cells(self, strategy: str = "rcm", active: bool = True) -> None:
         """
         Reorders the cells of the mesh to improve locality.
 
         Args:
-            strategy (str): The reordering strategy to use (e.g., 'rcm', 'bfs').
-            active (bool): If False, restores the original cell ordering.
+            strategy: The reordering strategy to use (e.g., 'rcm', 'bfs').
+            active: If False, restores the original cell ordering.
         """
         if not active:
             self._restore_original_cell_ordering()
-        else:
-            old_l2g = self.l2g_cells.copy()
-            renumber_cells(self, strategy=strategy)
-            # After renumbering, the g2l map is invalid and needs to be rebuilt
-            self.g2l_cells = {g: l for l, g in enumerate(self.l2g_cells)}
-            self.use_reordered_cells = True
+            self.analyze_mesh()
+            return
 
-            # Build a remap array: old_local_index -> new_local_index
-            remap = np.array([self.g2l_cells[g] for g in old_l2g])
+        old_l2g = self.l2g_cells.copy()
+        renumber_cells(self, strategy=strategy)
+        self.g2l_cells = {g: l for l, g in enumerate(self.l2g_cells)}
+        self.use_reordered_cells = True
 
-            # Update send_map and recv_map
-            for rank, indices in self.send_map.items():
-                self.send_map[rank] = [remap[i] for i in indices]
-            for rank, indices in self.recv_map.items():
-                self.recv_map[rank] = [remap[i] for i in indices]
+        remap = np.array([self.g2l_cells[g] for g in old_l2g])
+        for rank, indices in self.send_map.items():
+            self.send_map[rank] = [remap[i] for i in indices]
+        for rank, indices in self.recv_map.items():
+            self.recv_map[rank] = [remap[i] for i in indices]
 
         self.analyze_mesh()
 
-    def reorder_nodes(self, strategy: str = "rcm", active: bool = True):
+    def reorder_nodes(self, strategy: str = "rcm", active: bool = True) -> None:
         """
         Reorders the nodes of the mesh to improve locality.
 
         Args:
-            strategy (str): The reordering strategy to use.
-            active (bool): If False, restores the original node ordering.
+            strategy: The reordering strategy to use.
+            active: If False, restores the original node ordering.
         """
         if not active:
             self._restore_original_node_ordering()
         else:
             renumber_nodes(self, strategy=strategy)
-            # After renumbering, the g2l map is invalid and needs to be rebuilt
             self.g2l_nodes = {g: l for l, g in enumerate(self.l2g_nodes)}
             self.use_reordered_nodes = True
         self.analyze_mesh()
@@ -347,18 +339,13 @@ def create_local_meshes(
     """
     Partitions a global mesh and creates a list of local mesh objects.
 
-    This function orchestrates the mesh distribution process:
-    1. Partitions the global mesh if `parts` are not provided.
-    2. For each partition, constructs a `LocalMesh` object using the factory.
-    3. Optionally reorders cells and/or nodes within each local mesh.
-
     Args:
         global_mesh: The complete, unpartitioned PolyMesh object.
-        n_parts (Optional[int]): The desired number of partitions. Used if `parts` is not provided.
-        parts (Optional[np.ndarray]): An array of partition indices for each cell. If provided, partitioning is skipped.
-        partition_method (str): The algorithm for partitioning ('metis' or 'hierarchical').
-        reorder_cells_strategy (Optional[str]): Cell reordering strategy ('rcm', 'bfs', etc.) or None to disable.
-        reorder_nodes_strategy (Optional[str]): Node reordering strategy ('rcm', etc.) or None to disable.
+        n_parts: The desired number of partitions.
+        parts: An array of partition indices for each cell.
+        partition_method: The algorithm for partitioning ('metis' or 'hierarchical').
+        reorder_cells_strategy: Cell reordering strategy ('rcm', 'bfs', etc.).
+        reorder_nodes_strategy: Node reordering strategy ('rcm', etc.).
 
     Returns:
         A list of LocalMesh objects, one for each partition.
@@ -368,22 +355,21 @@ def create_local_meshes(
 
     if parts is None:
         if n_parts is None or n_parts <= 0:
-            raise ValueError(
-                "Either n_parts > 0 or a valid parts array must be provided."
-            )
+            raise ValueError("n_parts > 0 or a valid parts array must be provided.")
         parts = partition_mesh(global_mesh, n_parts, method=partition_method)
         print_partition_summary(parts)
     else:
-        # If parts are provided, derive n_parts from it, ignoring any passed n_parts
         n_parts = int(np.max(parts) + 1) if parts.size > 0 else 0
 
     halo_indices = _compute_halo_indices(global_mesh, parts)
-
     local_meshes = []
     if n_parts and n_parts > 0:
         for rank in range(n_parts):
-            halo_info = halo_indices[rank]
-            local_mesh = LocalMesh.from_global_mesh(global_mesh, parts, rank, halo_info)
+            if rank not in halo_indices:
+                continue
+            local_mesh = LocalMesh.from_global_mesh(
+                global_mesh, parts, rank, halo_indices[rank]
+            )
             if reorder_cells_strategy:
                 local_mesh.reorder_cells(strategy=reorder_cells_strategy)
             if reorder_nodes_strategy:
