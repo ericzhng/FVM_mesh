@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from fvm_mesh.tests.common_meshes import create_structured_quad_mesh, make_test_mesh
+from common_meshes import create_structured_quad_mesh, make_test_mesh
 from fvm_mesh.polymesh.partition import partition_mesh, print_partition_summary
 
 

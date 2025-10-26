@@ -6,7 +6,7 @@ import copy
 from fvm_mesh.polymesh.reorder import renumber_cells, renumber_nodes
 from fvm_mesh.polymesh.core_mesh import CoreMesh
 from fvm_mesh.polymesh.local_mesh import LocalMesh, _compute_halo_indices
-from fvm_mesh.tests.common_meshes import create_2x2_quad_mesh_fixture
+from common_meshes import create_2x2_quad_mesh_fixture
 
 
 def make_test_mesh_from_file():

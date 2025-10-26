@@ -5,7 +5,7 @@ import copy
 
 from fvm_mesh.polymesh import LocalMesh
 from fvm_mesh.polymesh.local_mesh import _compute_halo_indices
-from fvm_mesh.tests.common_meshes import create_3x3_quad_mesh_fixture
+from common_meshes import create_3x3_quad_mesh_fixture
 
 
 class TestLocalMesh(unittest.TestCase):
