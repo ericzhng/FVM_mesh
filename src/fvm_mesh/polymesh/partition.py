@@ -7,16 +7,19 @@ subdomains. Partitioning is a crucial step for parallel processing of large
 meshes, as it allows the computational load to be distributed across multiple
 processors.
 
-Key Features:
+Key Features
+------------
 - Support for different partitioning methods, including METIS and a
   hierarchical coordinate bisection method.
 - Ability to use cell weights to balance the partitioning.
 - A simple interface for partitioning a `CoreMesh` object.
 
-Functions:
-    partition_mesh: Partitions a mesh into a specified number of parts.
-    print_partition_summary: Prints a summary of the cell distribution across
-        partitions.
+Functions
+---------
+:py:func:`partition_mesh`:
+    Partitions a mesh into a specified number of parts.
+:py:func:`print_partition_summary`:
+    Prints a summary of the cell distribution across partitions.
 """
 
 import os

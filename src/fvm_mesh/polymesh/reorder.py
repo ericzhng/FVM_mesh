@@ -7,21 +7,23 @@ significantly improve the performance of numerical solvers by improving cache
 utilization and reducing computation time.
 
 Key Features:
-- Implementation of several reordering strategies, including:
-  - Reverse Cuthill-McKee (RCM)
-  - Gibbs-Poole-Stockmeyer (GPS)
-  - Sloan
-  - Spectral
-  - Spatial sorting
-- Support for both cell and node reordering.
-- In-place modification of mesh objects for efficiency.
+* Implementation of several reordering strategies, including:
+
+  * Reverse Cuthill-McKee (RCM)
+  * Gibbs-Poole-Stockmeyer (GPS)
+  * Sloan
+  * Spectral
+  * Spatial sorting
+
+* Support for both cell and node reordering.
+* In-place modification of mesh objects for efficiency.
 
 Classes:
-    _CellReorderStrategy: Abstract base class for cell reordering strategies.
+    :py:class:`_CellReorderStrategy`: Abstract base class for cell reordering strategies.
 
 Functions:
-    renumber_cells: Renumbers the cells of a mesh in-place.
-    renumber_nodes: Renumbers the nodes of a mesh in-place.
+    :py:func:`renumber_cells`: Renumbers the cells of a mesh in-place.
+    :py:func:`renumber_nodes`: Renumbers the nodes of a mesh in-place.
 """
 
 import numpy as np
