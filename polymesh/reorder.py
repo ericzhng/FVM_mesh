@@ -291,11 +291,28 @@ def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:
         )
 
     reorder_strategy = strategy_map[strategy]()
-    new_order = reorder_strategy.get_order(mesh)
+
     if is_local:
+        # For LocalMesh, reorder only the owned cells.
+        # Create a temporary mesh view for the owned part.
+        owned_mesh = CoreMesh()
+        owned_mesh.num_cells = mesh.num_owned_cells
+        owned_mesh.cell_connectivity = mesh.cell_connectivity[: mesh.num_owned_cells]
+        owned_mesh.node_coords = mesh.node_coords
+        owned_mesh.dimension = mesh.dimension
+
+        owned_mesh.analyze_mesh()
+        if hasattr(mesh, "cell_centroids") and mesh.cell_centroids.size > 0:
+            owned_mesh.cell_centroids = mesh.cell_centroids[: mesh.num_owned_cells]
+
+        new_order_local = reorder_strategy.get_order(owned_mesh)
+
+        # Combine the new order of owned cells with the original order of halo cells.
         new_order = np.concatenate(
-            (new_order, np.arange(mesh.num_owned_cells, mesh.num_cells))
+            (new_order_local, np.arange(mesh.num_owned_cells, mesh.num_cells))
         )
+    else:
+        new_order = reorder_strategy.get_order(mesh)
 
     mesh.cell_connectivity = [mesh.cell_connectivity[i] for i in new_order]
     if hasattr(mesh, "cell_type_ids") and mesh.cell_type_ids.size > 0:

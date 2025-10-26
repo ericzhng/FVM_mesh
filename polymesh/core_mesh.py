@@ -16,7 +16,7 @@ The `CoreMesh` class is designed to be a base class for more specialized mesh
 representations, providing a solid foundation for mesh analysis and manipulation.
 """
 
-from typing import Dict, List, Tuple, Any, Sequence
+from typing import Dict, List, Tuple, Any
 
 import gmsh
 import numpy as np

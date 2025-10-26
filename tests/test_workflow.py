@@ -121,7 +121,7 @@ class TestWorkflow(unittest.TestCase):
         local_meshes = create_local_meshes(
             global_mesh,
             parts=parts,
-            reorder_cells_strategy="rcm",
+            reorder_cells_strategy="",
             reorder_nodes_strategy="",
         )
         self.assertEqual(len(local_meshes), n_parts)
@@ -162,7 +162,8 @@ class TestWorkflow(unittest.TestCase):
             global_mesh,
             n_parts=n_parts,
             partition_method="metis",
-            reorder_cells_strategy="rcm",
+            reorder_cells_strategy="",
+            reorder_nodes_strategy="",
         )
 
         self.assertEqual(len(local_meshes), n_parts)

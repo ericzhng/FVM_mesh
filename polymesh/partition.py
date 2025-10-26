@@ -79,8 +79,9 @@ def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
     Returns:
         The adjacency list.
     """
-    if not mesh.cell_neighbors.any():
-        mesh.analyze_mesh()
+    if mesh.cell_neighbors.size == 0:
+        mesh._extract_cell_faces()
+        mesh._extract_cell_neighbors()
 
     adjacency: List[List[int]] = []
     for i in range(mesh.num_cells):
@@ -100,7 +101,9 @@ def _partition_with_metis(
     adjacency = _get_adjacency(mesh)
     try:
         vwgt = cell_weights.tolist() if cell_weights is not None else None
-        _, parts = metis.part_graph(adjacency, nparts=n_parts, vwgt=vwgt)
+        _, parts = metis.part_graph(
+            adjacency, nparts=n_parts, tpwgts=vwgt, recursive=True
+        )
         return np.array(parts, dtype=int)
     except Exception as ex:
         raise RuntimeError(f"METIS partitioning failed: {ex}")
@@ -117,8 +120,8 @@ def _partition_with_hierarchical(
             f"Provided n_parts={n_parts} may result in uneven partitions."
         )
 
-    if not mesh.cell_centroids.any():
-        mesh.analyze_mesh()
+    if mesh.cell_centroids.size == 0:
+        mesh._compute_centroids()
 
     centroids = mesh.cell_centroids
     weights = cell_weights if cell_weights is not None else np.ones(mesh.num_cells)
@@ -132,7 +135,7 @@ def _partition_with_hierarchical(
         p_to_split = np.argmax(part_counts)
         idxs_to_split = np.where(parts == p_to_split)[0]
 
-        if not idxs_to_split.any():
+        if idxs_to_split.size == 0:
             continue
 
         # Determine the axis to split along by finding the longest dimension

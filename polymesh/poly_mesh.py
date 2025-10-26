@@ -15,8 +15,6 @@ Classes:
     PolyMesh: Extends CoreMesh with advanced geometric computations.
 """
 
-from typing import List
-
 import numpy as np
 
 from .core_mesh import CoreMesh
