@@ -7,3 +7,7 @@ trunk/**
 *.png
 
 results/**
+dist/
+docs/
+
+**/*.egg-info
