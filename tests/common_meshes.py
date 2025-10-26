@@ -1,7 +1,7 @@
 import os
 
 import numpy as np
-from polymesh.poly_mesh import PolyMesh
+from fvm_mesh.polymesh.poly_mesh import PolyMesh
 
 
 def create_structured_quad_mesh(nx: int, ny: int):

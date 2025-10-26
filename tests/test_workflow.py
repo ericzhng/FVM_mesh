@@ -6,8 +6,8 @@ import sys
 import numpy as np
 from typing import List
 
-from polymesh.poly_mesh import PolyMesh
-from polymesh.local_mesh import LocalMesh, _compute_halo_indices, create_local_meshes
+from fvm_mesh.polymesh.poly_mesh import PolyMesh
+from fvm_mesh.polymesh.local_mesh import LocalMesh, _compute_halo_indices, create_local_meshes
 from polymesh.partition import partition_mesh, print_partition_summary
 from tests.common_meshes import create_5x5_quad_mesh_fixture
 

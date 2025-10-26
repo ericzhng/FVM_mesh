@@ -2,7 +2,7 @@ import unittest
 import os
 import numpy as np
 
-from polymesh.core_mesh import CoreMesh
+from fvm_mesh.polymesh.core_mesh import CoreMesh
 
 
 class TestCoreMesh(unittest.TestCase):

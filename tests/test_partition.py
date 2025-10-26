@@ -3,8 +3,8 @@ import unittest
 
 import numpy as np
 
-from tests.common_meshes import create_structured_quad_mesh, make_test_mesh
-from polymesh.partition import partition_mesh, print_partition_summary
+from fvm_mesh.tests.common_meshes import create_structured_quad_mesh, make_test_mesh
+from fvm_mesh.polymesh.partition import partition_mesh, print_partition_summary
 
 
 class TestPartitionMesh(unittest.TestCase):

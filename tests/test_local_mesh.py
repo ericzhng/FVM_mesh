@@ -3,9 +3,9 @@ import unittest
 import numpy as np
 import copy
 
-from polymesh import LocalMesh
-from polymesh.local_mesh import _compute_halo_indices
-from tests.common_meshes import create_3x3_quad_mesh_fixture
+from fvm_mesh.polymesh import LocalMesh
+from fvm_mesh.polymesh.local_mesh import _compute_halo_indices
+from fvm_mesh.tests.common_meshes import create_3x3_quad_mesh_fixture
 
 
 class TestLocalMesh(unittest.TestCase):

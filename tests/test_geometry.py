@@ -3,7 +3,7 @@ import unittest
 
 import gmsh
 
-from meshgen.geometry import Geometry
+from fvm_mesh.meshgen.geometry import Geometry
 
 
 class TestGeometry(unittest.TestCase):

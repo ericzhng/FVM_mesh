@@ -3,8 +3,8 @@ import unittest
 
 import gmsh
 
-from meshgen.geometry import Geometry
-from meshgen.mesh_generator import MeshGenerator
+from fvm_mesh.meshgen.geometry import Geometry
+from fvm_mesh.meshgen.mesh_generator import MeshGenerator
 
 
 class TestMesh2D(unittest.TestCase):
