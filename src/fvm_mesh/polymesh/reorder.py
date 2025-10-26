@@ -252,7 +252,13 @@ class _RandomStrategy(_CellReorderStrategy):
     """Randomly permutes the cells."""
 
     def get_order(self, mesh: CoreMesh) -> np.ndarray:
-        return np.random.permutation(mesh.num_cells)
+        if mesh.num_cells < 2:
+            return np.arange(mesh.num_cells)
+        original_order = np.arange(mesh.num_cells)
+        new_order = np.random.permutation(mesh.num_cells)
+        while np.array_equal(new_order, original_order):
+            new_order = np.random.permutation(mesh.num_cells)
+        return new_order
 
 
 def renumber_cells(mesh: CoreMesh, strategy: str = "rcm") -> None:

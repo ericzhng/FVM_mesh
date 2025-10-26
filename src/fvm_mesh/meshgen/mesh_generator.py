@@ -5,7 +5,7 @@ import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
 
-from common.utility import plot_mesh
+from ..common.utility import plot_mesh
 
 
 class MeshGenerator:

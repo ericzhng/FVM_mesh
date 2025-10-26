@@ -25,12 +25,30 @@ from typing import List, Optional
 
 import numpy as np
 
-from polymesh.core_mesh import CoreMesh
+from .core_mesh import CoreMesh
 
 # Note: The METIS library is loaded dynamically. The path to the METIS DLL
 # is set here. This might need to be adjusted depending on the user's
 # environment.
-os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+import os
+import sys
+from importlib import resources
+
+# Note: The METIS library is loaded dynamically. The path to the METIS DLL
+# is set here. This might need to be adjusted depending on the user's
+# environment.
+try:
+    if sys.version_info < (3, 9):
+        with resources.path('fvm_mesh', 'dll') as dll_dir:
+            os.environ["METIS_DLL"] = os.path.join(dll_dir, 'metis.dll')
+    else:
+        dll_path = resources.files('fvm_mesh').joinpath('dll', 'metis.dll')
+        os.environ["METIS_DLL"] = str(dll_path)
+except (ModuleNotFoundError, FileNotFoundError):
+    # Fallback for when the package is not installed, e.g., when running tests directly
+    os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+
+
 try:
     import metis
 except ImportError:

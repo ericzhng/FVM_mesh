@@ -280,7 +280,7 @@ class CoreMesh:
             return
 
         import matplotlib.pyplot as plt
-        from common.utility import plot_mesh
+        from ..common.utility import plot_mesh
 
         fig, ax = plt.subplots(figsize=(10, 8))
         plot_mesh(
