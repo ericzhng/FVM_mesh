@@ -148,9 +148,22 @@ class Geometry:
         Returns:
             int: The tag of the created surface.
         """
-        rectangle = gmsh.model.occ.addRectangle(x, y, 0, length, width)
-        gmsh.model.occ.synchronize()
-        return rectangle
+        p1 = gmsh.model.geo.addPoint(x, y, 0, mesh_size)
+        p2 = gmsh.model.geo.addPoint(x + length, y, 0, mesh_size)
+        p3 = gmsh.model.geo.addPoint(x + length, y + width, 0, mesh_size)
+        p4 = gmsh.model.geo.addPoint(x, y + width, 0, mesh_size)
+
+        lines = [
+            gmsh.model.geo.addLine(p1, p2),
+            gmsh.model.geo.addLine(p2, p3),
+            gmsh.model.geo.addLine(p3, p4),
+            gmsh.model.geo.addLine(p4, p1),
+        ]
+
+        curve_loop = gmsh.model.geo.addCurveLoop(lines)
+        surface = gmsh.model.geo.addPlaneSurface([curve_loop])
+        gmsh.model.geo.synchronize()
+        return surface
 
     def circle(
         self, radius: float, x: float = 0.0, y: float = 0.0, mesh_size: float = 0.1
