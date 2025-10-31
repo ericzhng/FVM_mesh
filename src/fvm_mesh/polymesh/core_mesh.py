@@ -184,10 +184,11 @@ class CoreMesh:
         """
         if self.num_cells == 0:
             raise RuntimeError("No cells found. Read a mesh first.")
+        if self._is_analyzed:
+            return
         self._compute_centroids()
         self._extract_cell_faces()
-        if self.cell_neighbors.size == 0:
-            self._extract_cell_neighbors()
+        self._extract_cell_neighbors()
         self._is_analyzed = True
 
     def _extract_cell_faces(self) -> None:

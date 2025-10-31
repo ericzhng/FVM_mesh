@@ -35,6 +35,7 @@ class PolyMesh(CoreMesh):
         face_midpoints (np.ndarray): Midpoint of each face of each cell.
         face_normals (np.ndarray): Normal vector of each face of each cell.
         face_areas (np.ndarray): Area of each face of each cell.
+        face_to_cell_dist (np.ndarray): Distance from each face to the cell centroid.
         quality (MeshQuality): An object to compute and store mesh quality metrics.
     """
 
@@ -47,6 +48,7 @@ class PolyMesh(CoreMesh):
         self.face_midpoints: np.ndarray = np.array([])
         self.face_normals: np.ndarray = np.array([])
         self.face_areas: np.ndarray = np.array([])
+        self.face_to_cell_dist: np.ndarray = np.array([])
 
         self.quality = MeshQuality()
 
@@ -73,8 +75,11 @@ class PolyMesh(CoreMesh):
         """
         if self.num_cells == 0:
             raise RuntimeError("No cells found. Read a mesh first.")
+        if self._is_analyzed:
+            return
         super().analyze_mesh()
         self._compute_face_properties()
+        self._compute_face_to_cell_dist()
         self._compute_cell_volumes()
         self._is_analyzed = True
 
@@ -129,6 +134,16 @@ class PolyMesh(CoreMesh):
                 vec_to_face = self.face_midpoints[ci, fi] - self.cell_centroids[ci]
                 if np.dot(self.face_normals[ci, fi], vec_to_face) < 0:
                     self.face_normals[ci, fi] *= -1
+
+    def _compute_face_to_cell_dist(self) -> None:
+        """Computes the distance from each face to the cell centroid."""
+        if self.face_midpoints.size == 0:
+            return
+        self.face_to_cell_dist = np.zeros_like(self.face_areas)
+        for ci in range(self.num_cells):
+            for fi in range(len(self.cell_faces[ci])):
+                vec = self.face_midpoints[ci, fi] - self.cell_centroids[ci]
+                self.face_to_cell_dist[ci, fi] = np.linalg.norm(vec)
 
     def _compute_cell_volumes(self) -> None:
         """Computes the volume of each cell."""
@@ -224,6 +239,14 @@ class PolyMesh(CoreMesh):
         )
         print(
             f"  {'Cell Volume':<20} {vol_min:>15.4e} {vol_max:>15.4e} {vol_avg:>15.4e}"
+        )
+        dist_min, dist_max, dist_avg = (
+            np.min(self.face_to_cell_dist[self.face_to_cell_dist > 0]),
+            np.max(self.face_to_cell_dist),
+            np.mean(self.face_to_cell_dist[self.face_to_cell_dist > 0]),
+        )
+        print(
+            f"  {'Face-to-Cell Dist':<20} {dist_min:>15.4e} {dist_max:>15.4e} {dist_avg:>15.4e}"
         )
 
     def _compute_quality(self) -> None:
