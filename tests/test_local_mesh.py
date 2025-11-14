@@ -4,8 +4,10 @@ import numpy as np
 import copy
 
 from fvm_mesh.polymesh import LocalMesh
-from fvm_mesh.polymesh.local_mesh import _compute_halo_indices
+from fvm_mesh.polymesh.core_mesh import CoreMesh
+from fvm_mesh.polymesh.local_mesh import _compute_halo_indices, create_local_meshes
 from common_meshes import create_3x3_quad_mesh_fixture
+from fvm_mesh.polymesh.partition import partition_mesh
 
 
 class TestLocalMesh(unittest.TestCase):
@@ -26,6 +28,39 @@ class TestLocalMesh(unittest.TestCase):
             filepath=f"{self.tmp_path}/global_mesh.png", parts=self.parts
         )
         self.halo_indices = _compute_halo_indices(self.global_mesh, self.parts)
+
+    def test_local_mesh_creation_complex_example(self):
+        """Tests the creation and properties of the local mesh for rank 0."""
+        n_parts = 4
+        partition_method = "metis"
+
+        global_mesh = CoreMesh()
+        self.test_msh_file = os.path.join(
+            os.path.dirname(__file__), "..", "data", "sample_rect_mesh.msh"
+        )
+        global_mesh.read_gmsh(self.test_msh_file)
+        global_mesh.analyze_mesh()
+
+        parts = partition_mesh(global_mesh, n_parts, method=partition_method)
+
+        global_mesh.plot(os.path.join(self.tmp_path, "sample_rect_mesh.png"), parts)
+
+        local_meshes = create_local_meshes(
+            global_mesh,
+            n_parts,
+            partition_method=partition_method,
+            reorder_cells_strategy=None,
+            reorder_nodes_strategy=None,
+        )
+        for local_mesh in local_meshes:
+            local_mesh.plot(
+                os.path.join(
+                    self.tmp_path, f"sample_rect_mesh_local_{local_mesh.rank}.png"
+                )
+            )
+
+        # --- Verify cell properties ---
+        self.assertEqual(local_meshes[0].rank, 0)
 
     def test_local_mesh_creation_rank0(self):
         """Tests the creation and properties of the local mesh for rank 0."""

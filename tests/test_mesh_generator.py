@@ -157,6 +157,70 @@ class TestMesh2D(unittest.TestCase):
         with self.assertRaises(ValueError):
             mesher.generate(mesh_params=mesh_params)
 
+    def test_physical_group_setup(self):
+        """Test the automatic setup of physical groups."""
+        projName = "physical_group_test"
+        gmsh.model.add(projName)
+
+        geom = Geometry(projName)
+        surface_tag = geom.rectangle(length=1, width=1, mesh_size=0.1)
+
+        # Get boundary curves
+        boundary_curves = [c[1] for c in gmsh.model.getBoundary([(2, surface_tag)])]
+        self.assertEqual(len(boundary_curves), 4)
+
+        # Manually assign one curve to a physical group
+        manual_group_name = "inlet"
+        gmsh.model.addPhysicalGroup(1, [boundary_curves[0]], name=manual_group_name)
+
+        # Use the mesh generator
+        mesher = MeshGenerator(surface_tags=surface_tag, output_dir=self.output_dir)
+        mesh_params = {surface_tag: {"mesh_type": "tri"}}
+        mesher.generate(mesh_params=mesh_params, filename="physical_group_test.msh")
+
+        # --- Verification ---
+
+        # 1. Verify 2D "fluid" group
+        phys_groups_2d = gmsh.model.getPhysicalGroups(2)
+        self.assertEqual(len(phys_groups_2d), 1, "Should be one 2D physical group.")
+        fluid_group_tag = phys_groups_2d[0][1]
+        fluid_group_name = gmsh.model.getPhysicalName(2, fluid_group_tag)
+        self.assertEqual(fluid_group_name, "fluid")
+        fluid_entities = gmsh.model.getEntitiesForPhysicalGroup(2, fluid_group_tag)
+        self.assertIn(surface_tag, fluid_entities)
+
+        # 2. Verify 1D groups ("inlet" and "unnamed")
+        phys_groups_1d = gmsh.model.getPhysicalGroups(1)
+        self.assertEqual(len(phys_groups_1d), 2, "Should be two 1D physical groups.")
+
+        group_names = [gmsh.model.getPhysicalName(1, tag) for dim, tag in phys_groups_1d]
+        self.assertIn("inlet", group_names)
+        self.assertIn("unnamed", group_names)
+
+        # 3. Verify content of "unnamed" group
+        unnamed_tag = -1
+        for dim, tag in phys_groups_1d:
+            if gmsh.model.getPhysicalName(dim, tag) == "unnamed":
+                unnamed_tag = tag
+                break
+        
+        unnamed_entities = gmsh.model.getEntitiesForPhysicalGroup(1, unnamed_tag)
+        self.assertEqual(len(unnamed_entities), 3)
+        
+        # Check that the unassigned curves are in the "unnamed" group
+        unassigned_curves = set(boundary_curves[1:])
+        self.assertEqual(set(unnamed_entities), unassigned_curves)
+
+        # 4. Verify content of "inlet" group
+        inlet_tag = -1
+        for dim, tag in phys_groups_1d:
+            if gmsh.model.getPhysicalName(dim, tag) == "inlet":
+                inlet_tag = tag
+                break
+        inlet_entities = gmsh.model.getEntitiesForPhysicalGroup(1, inlet_tag)
+        self.assertEqual(len(inlet_entities), 1)
+        self.assertEqual(inlet_entities[0], boundary_curves[0])
+
 
 if __name__ == "__main__":
     unittest.main()

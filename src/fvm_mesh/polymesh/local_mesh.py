@@ -251,6 +251,35 @@ class LocalMesh(PolyMesh):
         local_mesh.num_cells = len(local_mesh.cell_connectivity)
         local_mesh.num_nodes = local_mesh.node_coords.shape[0]
 
+        # consider boundary faces information after partition
+        local_boundary_faces_nodes = []
+        local_boundary_faces_tags = []
+
+        if global_mesh.boundary_faces_nodes.size > 0:
+            for i, face_nodes_g in enumerate(global_mesh.boundary_faces_nodes):
+                is_local_face = all(
+                    node_g in local_mesh.g2l_nodes for node_g in face_nodes_g
+                )
+                if is_local_face:
+                    face_nodes_l = [
+                        local_mesh.g2l_nodes[node_g] for node_g in face_nodes_g
+                    ]
+                    local_boundary_faces_nodes.append(face_nodes_l)
+                    local_boundary_faces_tags.append(global_mesh.boundary_faces_tags[i])
+
+        if local_boundary_faces_nodes:
+            local_mesh.boundary_faces_nodes = np.array(
+                local_boundary_faces_nodes, dtype=int
+            )
+            local_mesh.boundary_faces_tags = np.array(
+                local_boundary_faces_tags, dtype=int
+            )
+        else:
+            local_mesh.boundary_faces_nodes = np.array([], dtype=int)
+            local_mesh.boundary_faces_tags = np.array([], dtype=int)
+
+        local_mesh.boundary_tag_map = copy.deepcopy(global_mesh.boundary_tag_map)
+
     def _store_original_ordering(self) -> None:
         """Stores the initial state of the mesh before any reordering."""
         self._original_l2g_cells = self.l2g_cells.copy()

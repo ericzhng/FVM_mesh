@@ -42,14 +42,16 @@ from importlib import resources
 # environment.
 try:
     if sys.version_info < (3, 9):
-        with resources.path('fvm_mesh', 'dll') as dll_dir:
-            os.environ["METIS_DLL"] = os.path.join(dll_dir, 'metis.dll')
+        with resources.path("fvm_mesh", "dll") as dll_dir:
+            os.environ["METIS_DLL"] = os.path.join(dll_dir, "metis.dll")
     else:
-        dll_path = resources.files('fvm_mesh').joinpath('dll', 'metis.dll')
+        dll_path = resources.files("fvm_mesh").joinpath("dll", "metis.dll")
         os.environ["METIS_DLL"] = str(dll_path)
 except (ModuleNotFoundError, FileNotFoundError):
     # Fallback for when the package is not installed, e.g., when running tests directly
-    os.environ["METIS_DLL"] = os.path.join(os.getcwd(), "dll", "metis.dll")
+    os.environ["METIS_DLL"] = os.path.join(
+        os.path.dirname(__file__), "..", "dll", "metis.dll"
+    )
 
 
 try:

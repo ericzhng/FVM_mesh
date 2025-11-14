@@ -17,6 +17,7 @@ representations, providing a solid foundation for mesh analysis and manipulation
 """
 
 from typing import Dict, List, Tuple, Any
+from collections import defaultdict
 
 import gmsh
 import numpy as np
@@ -101,7 +102,7 @@ class CoreMesh:
             gmsh.open(msh_file)
             self._read_nodes()
             self._read_elements()
-            self._read_gmsh_boundary_groups()
+            self._read_physical_groups()
         finally:
             gmsh.finalize()
 
@@ -147,34 +148,77 @@ class CoreMesh:
             dim = max(dim, int(props[1]))
         return dim
 
-    def _read_gmsh_boundary_groups(self) -> None:
+    def _read_physical_groups(self) -> None:
         """
-        Reads physical groups of dimension (dim-1) as boundary faces.
+        Reads physical groups of dimension (dim-1) to set up boundary faces.
+        This implementation enforces that only one physical group can be assigned to each face.
         """
         bdim = self.dimension - 1
         if bdim < 0:
             return
 
-        all_faces, all_tags = [], []
-        for dim, tag in gmsh.model.getPhysicalGroups(bdim):
+        # A dictionary to map unique faces to their node connectivity and associated physical tag.
+        # The key is a frozenset of node indices, ensuring uniqueness regardless of node ordering.
+        faces_map: Dict[frozenset, Dict[str, Any]] = {}
+
+        physical_groups = gmsh.model.getPhysicalGroups(bdim)
+        if not physical_groups:
+            return
+
+        for dim, tag in physical_groups:
             name = gmsh.model.getPhysicalName(dim, tag) or str(tag)
             self.boundary_tag_map[name] = tag
             entities = gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
 
             for ent in entities:
-                etypes, _, etconn_list = gmsh.model.mesh.getElements(dim, ent)
-                if not etconn_list:
-                    continue
+                try:
+                    elem_types, _, node_tags_per_type = gmsh.model.mesh.getElements(
+                        dim, ent
+                    )
+                except ValueError:
+                    continue  # No elements in this entity
 
-                n_nodes = gmsh.model.mesh.getElementProperties(etypes[0])[3]
-                faces = np.array(etconn_list[0]).reshape(-1, n_nodes)
-                faces_idx = np.vectorize(self._tag_to_index.get)(faces)
-                all_faces.append(faces_idx)
-                all_tags.extend([tag] * faces_idx.shape[0])
+                for i, etype in enumerate(elem_types):
+                    props = gmsh.model.mesh.getElementProperties(etype)
+                    n_nodes = props[3]
 
-        if all_faces:
-            self.boundary_faces_nodes = np.vstack(all_faces)
-            self.boundary_faces_tags = np.array(all_tags, dtype=int)
+                    raw_conn = node_tags_per_type[i]
+                    if len(raw_conn) == 0:
+                        continue
+
+                    faces = np.array(raw_conn).reshape(-1, n_nodes)
+                    for face_tags in faces:
+                        try:
+                            face_nodes = [self._tag_to_index[t] for t in face_tags]
+                        except KeyError as e:
+                            raise RuntimeError(
+                                f"Mesh data inconsistency: Node tag {e} from a boundary face "
+                                "was not found in the global node list. This may indicate a corrupt mesh file."
+                            ) from e
+
+                        face_key = frozenset(face_nodes)
+
+                        if face_key in faces_map:
+                            existing_tag = faces_map[face_key]["tag"]
+                            if existing_tag != tag:
+                                existing_name = gmsh.model.getPhysicalName(
+                                    dim, existing_tag
+                                ) or str(existing_tag)
+                                raise ValueError(
+                                    f"Boundary face with nodes {face_nodes} is assigned to multiple physical groups: "
+                                    f"'{existing_name}' (tag {existing_tag}) and '{name}' (tag {tag}). "
+                                    "Each boundary face can only be assigned to one physical group."
+                                )
+                        else:
+                            faces_map[face_key] = {"nodes": face_nodes, "tag": tag}
+
+        if faces_map:
+            self.boundary_faces_nodes = np.array(
+                [data["nodes"] for data in faces_map.values()], dtype=int
+            )
+            self.boundary_faces_tags = np.array(
+                [data["tag"] for data in faces_map.values()], dtype=int
+            )
 
     def analyze_mesh(self) -> None:
         """

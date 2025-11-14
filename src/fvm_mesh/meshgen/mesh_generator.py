@@ -106,8 +106,8 @@ class MeshGenerator:
             curve_tag = dim_tag[1]
             p_tags = gmsh.model.getBoundary([dim_tag], oriented=False)
             p_start_tag, p_end_tag = p_tags[0][1], p_tags[1][1]
-            coord_start = gmsh.model.occ.getCenterOfMass(0, p_start_tag)
-            coord_end = gmsh.model.occ.getCenterOfMass(0, p_end_tag)
+            coord_start = gmsh.model.getValue(0, p_start_tag, [])
+            coord_end = gmsh.model.getValue(0, p_end_tag, [])
 
             if abs(coord_start[1] - coord_end[1]) < 1e-6:
                 h_curves.append(curve_tag)
@@ -116,18 +116,40 @@ class MeshGenerator:
         return h_curves, v_curves
 
     def _setup_physical_groups(self):
-        """Sets up physical groups for boundaries and surfaces."""
-        all_boundary_curves = []
-        for surface_tag in self.surface_tags:
-            boundary_curves = gmsh.model.getBoundary([(2, surface_tag)], oriented=False)
-            all_boundary_curves.extend([c[1] for c in boundary_curves])
+        """
+        Ensures all boundaries and surfaces are assigned to physical groups.
 
-        if all_boundary_curves:
-            gmsh.model.addPhysicalGroup(
-                1, list(set(all_boundary_curves)), name="boundary"
+        - Boundaries (1D): Any boundary curve not assigned to a physical group
+          will be added to a new group named "unnamed".
+        - Surfaces (2D): Any surface in `self.surface_tags` not assigned to a
+          physical group will be added to a new group named "fluid".
+        """
+        # --- Handle 1D Physical Groups (Boundaries) ---
+        all_boundary_curves = set()
+        for surface_tag in self.surface_tags:
+            boundary_dim_tags = gmsh.model.getBoundary(
+                [(2, surface_tag)], oriented=False
             )
-        if self.surface_tags:
-            gmsh.model.addPhysicalGroup(2, self.surface_tags, name="fluid")
+            all_boundary_curves.update(c[1] for c in boundary_dim_tags)
+
+        curves_in_any_group = set()
+        for dim, tag in gmsh.model.getPhysicalGroups(1):
+            curves_in_any_group.update(gmsh.model.getEntitiesForPhysicalGroup(dim, tag))
+
+        untagged_curves = list(all_boundary_curves - curves_in_any_group)
+        if untagged_curves:
+            gmsh.model.addPhysicalGroup(1, untagged_curves, name="unnamed")
+
+        # --- Handle 2D Physical Groups (Surfaces) ---
+        surfaces_in_any_group = set()
+        for dim, tag in gmsh.model.getPhysicalGroups(2):
+            surfaces_in_any_group.update(
+                gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
+            )
+
+        untagged_surfaces = list(set(self.surface_tags) - surfaces_in_any_group)
+        if untagged_surfaces:
+            gmsh.model.addPhysicalGroup(2, untagged_surfaces, name="fluid")
 
     def _save_mesh(self, filename: str):
         """Saves the generated mesh to a file."""
