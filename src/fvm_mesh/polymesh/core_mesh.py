@@ -73,6 +73,7 @@ class CoreMesh:
         self.cell_faces: List[List[List[int]]] = []
         self.cell_neighbors: np.ndarray = np.array([])
         self.cell_centroids: np.ndarray = np.array([])
+        self.cell_face_tags: np.ndarray = np.array([])
 
         # Boundary info
         self.boundary_faces_nodes: np.ndarray = np.array([])  # (M, n_face_nodes)
@@ -233,6 +234,7 @@ class CoreMesh:
         self._compute_centroids()
         self._extract_cell_faces()
         self._extract_cell_neighbors()
+        self._compute_cell_face_tags()
         self._is_analyzed = True
 
     def _extract_cell_faces(self) -> None:
@@ -296,6 +298,32 @@ class CoreMesh:
                     neighbors[ci, fi] = elems[0] if elems[1] == ci else elems[1]
 
         self.cell_neighbors = neighbors
+
+    def _compute_cell_face_tags(self) -> None:
+        """
+        Computes tags for each face of each cell.
+        Boundary faces get a tag from physical groups.
+        Interior faces get a tag of 0.
+        """
+        if not self.cell_faces:
+            return
+
+        # Build a mapping from boundary face nodes to their tags.
+        # Using frozenset for order-independent node matching.
+        boundary_face_map = {
+            frozenset(nodes): tag
+            for nodes, tag in zip(self.boundary_faces_nodes, self.boundary_faces_tags)
+        }
+
+        max_faces = self.cell_neighbors.shape[1]
+        self.cell_face_tags = np.zeros((self.num_cells, max_faces), dtype=np.int32)
+
+        for i in range(self.num_cells):
+            for j, neighbor_idx in enumerate(self.cell_neighbors[i]):
+                if neighbor_idx == -1:  # This is a boundary face
+                    face_nodes = frozenset(self.cell_faces[i][j])
+                    if face_nodes in boundary_face_map:
+                        self.cell_face_tags[i, j] = boundary_face_map[face_nodes]
 
     def _compute_centroids(self) -> None:
         """Computes the centroid of each cell."""
