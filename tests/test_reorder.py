@@ -12,7 +12,7 @@ from common_meshes import create_2x2_quad_mesh_fixture
 def make_test_mesh_from_file():
     """Creates a test mesh from a file."""
     msh_file = os.path.join(
-        os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh"
+        os.path.dirname(__file__), "..", "data", "sample_rect_mesh.msh"
     )
     mesh = CoreMesh()
     mesh.read_gmsh(msh_file)

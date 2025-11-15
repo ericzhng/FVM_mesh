@@ -7,7 +7,11 @@ import numpy as np
 from typing import List
 
 from fvm_mesh.polymesh.poly_mesh import PolyMesh
-from fvm_mesh.polymesh.local_mesh import LocalMesh, _compute_halo_indices, create_local_meshes
+from fvm_mesh.polymesh.local_mesh import (
+    LocalMesh,
+    _compute_halo_indices,
+    create_local_meshes,
+)
 from fvm_mesh.polymesh.partition import partition_mesh, print_partition_summary
 from common_meshes import create_5x5_quad_mesh_fixture
 
@@ -18,7 +22,7 @@ class TestWorkflow(unittest.TestCase):
         self.tmp_path = "results/workflow"
         os.makedirs(self.tmp_path, exist_ok=True)
         self.mesh_filepath = os.path.join(
-            os.path.dirname(__file__), "..", "data", "sample_mixed_mesh.msh"
+            os.path.dirname(__file__), "..", "data", "sample_rect_mesh.msh"
         )
 
     def tearDown(self):
