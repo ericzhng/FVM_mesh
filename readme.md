@@ -20,6 +20,28 @@ To install the package, you can use `pip`:
 pip install fvm_mesh
 ```
 
+## Development Installation
+
+To install the package for development, you can clone the repository and install it in editable mode. This allows you to make changes to the source code and have them reflected immediately without reinstalling.
+
+First, ensure you have the necessary build tools:
+
+```bash
+pip install build
+```
+
+Next, build the package from the project's root directory:
+
+```bash
+python -m build
+```
+
+Finally, install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
 ## Usage
 
 Here is a simple example of how to use the package to generate a triangular mesh:
