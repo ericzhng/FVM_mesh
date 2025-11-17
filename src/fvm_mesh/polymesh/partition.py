@@ -12,7 +12,7 @@ Key Features
 - Support for different partitioning methods, including METIS and a
   hierarchical coordinate bisection method.
 - Ability to use cell weights to balance the partitioning.
-- A simple interface for partitioning a `CoreMesh` object.
+- A simple interface for partitioning a `PolyMesh` object.
 
 Functions
 ---------
@@ -22,13 +22,16 @@ Functions
     Prints a summary of the cell distribution across partitions.
 """
 
+from __future__ import annotations
+
 import os
 import warnings
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
 
-from .core_mesh import CoreMesh
+if TYPE_CHECKING:
+    from .poly_mesh import PolyMesh
 
 # Note: The METIS library is loaded dynamically. The path to the METIS DLL
 # is set here. This might need to be adjusted depending on the user's
@@ -61,7 +64,7 @@ except ImportError:
 
 
 def partition_mesh(
-    mesh: CoreMesh,
+    mesh: PolyMesh,
     n_parts: int,
     method: str = "metis",
     cell_weights: Optional[np.ndarray] = None,
@@ -82,7 +85,7 @@ def partition_mesh(
         A numpy array of partition IDs for each cell.
     """
     if n_parts <= 1:
-        return np.zeros(mesh.num_cells, dtype=int)
+        return np.zeros(mesh.n_cells, dtype=int)
 
     if method == "metis":
         return _partition_with_metis(mesh, n_parts, cell_weights)
@@ -92,7 +95,7 @@ def partition_mesh(
         raise NotImplementedError(f"Partition method '{method}' not implemented")
 
 
-def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
+def _get_adjacency(mesh: PolyMesh) -> List[List[int]]:
     """
     Computes the adjacency list for the mesh cells.
 
@@ -104,10 +107,11 @@ def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
     """
     if mesh.cell_neighbors.size == 0:
         mesh._extract_cell_faces()
-        mesh._extract_cell_neighbors()
+        # compute topology (neighbors and tags)
+        mesh._compute_face_topology()
 
     adjacency: List[List[int]] = []
-    for i in range(mesh.num_cells):
+    for i in range(mesh.n_cells):
         neighs = {int(nb) for nb in mesh.cell_neighbors[i] if nb != -1}
         neighs.discard(i)
         adjacency.append(list(neighs))
@@ -115,7 +119,7 @@ def _get_adjacency(mesh: CoreMesh) -> List[List[int]]:
 
 
 def _partition_with_metis(
-    mesh: CoreMesh, n_parts: int, cell_weights: Optional[np.ndarray]
+    mesh: PolyMesh, n_parts: int, cell_weights: Optional[np.ndarray]
 ) -> np.ndarray:
     """Partitions the mesh using the METIS library."""
     if metis is None:
@@ -133,7 +137,7 @@ def _partition_with_metis(
 
 
 def _partition_with_hierarchical(
-    mesh: CoreMesh, n_parts: int, cell_weights: Optional[np.ndarray]
+    mesh: PolyMesh, n_parts: int, cell_weights: Optional[np.ndarray]
 ) -> np.ndarray:
     """Partitions the mesh using a sequential coordinate bisection method."""
     is_power_of_two = (n_parts > 0) and (n_parts & (n_parts - 1) == 0)
@@ -144,11 +148,11 @@ def _partition_with_hierarchical(
         )
 
     if mesh.cell_centroids.size == 0:
-        mesh._compute_centroids()
+        mesh._compute_cell_centroids()
 
     centroids = mesh.cell_centroids
-    weights = cell_weights if cell_weights is not None else np.ones(mesh.num_cells)
-    parts = np.zeros(mesh.num_cells, dtype=int)
+    weights = cell_weights if cell_weights is not None else np.ones(mesh.n_cells)
+    parts = np.zeros(mesh.n_cells, dtype=int)
 
     # Iteratively bisect the largest partition until the desired number of
     # partitions is reached.

@@ -14,17 +14,27 @@ Key Features:
 Classes:
     MeshQuality: A class for computing and storing mesh quality metrics.
 """
-
+from __future__ import annotations
+from typing import Dict, List, Tuple, TYPE_CHECKING
+from dataclasses import dataclass
 import numpy as np
-from typing import Dict, List, Tuple
+
+if TYPE_CHECKING:
+    from .poly_mesh import PolyMesh
+
+# --- Constants for magic numbers ---
+GEOMETRY_TOLERANCE = 1e-12
+IDEAL_TRIANGLE_ANGLE = 60.0
+IDEAL_QUAD_ANGLE = 90.0
 
 
+@dataclass(frozen=True)
 class MeshQuality:
     """
-    Computes and stores mesh quality metrics for a PolyMesh object.
+    Stores mesh quality metrics for a PolyMesh object.
 
-    This class calculates various metrics to assess the quality of a mesh,
-    which is crucial for the stability and accuracy of numerical simulations.
+    This is a data-centric class that holds the results of a quality analysis.
+    Instances of this class are created via the `from_mesh` class method.
 
     Attributes:
         min_max_volume_ratio (float): Ratio of the smallest to the largest cell volume.
@@ -36,72 +46,80 @@ class MeshQuality:
             topological issues found in the mesh.
     """
 
-    def __init__(self):
-        """Initializes the MeshQuality instance with default values."""
-        self.min_max_volume_ratio: float = 0.0
-        self.cell_skewness_values: np.ndarray = np.array([])
-        self.cell_non_orthogonality_values: np.ndarray = np.array([])
-        self.cell_aspect_ratio_values: np.ndarray = np.array([])
-        self.connectivity_issues: List[str] = []
-        self._is_computed = False
+    min_max_volume_ratio: float
+    cell_skewness_values: np.ndarray
+    cell_non_orthogonality_values: np.ndarray
+    cell_aspect_ratio_values: np.ndarray
+    connectivity_issues: List[str]
 
-    def compute(self, mesh) -> None:
+    @classmethod
+    def from_mesh(cls, mesh: "PolyMesh") -> "MeshQuality":
         """
-        Computes all mesh quality metrics from a PolyMesh object.
-
-        Args:
-            mesh (PolyMesh): The mesh object to be analyzed.
+        Computes all mesh quality metrics from a PolyMesh object and returns a new instance.
         """
         if not mesh._is_analyzed:
             raise RuntimeError("Mesh must be analyzed before computing quality.")
 
-        self._initialize_metrics(mesh.num_cells)
-        if mesh.num_cells == 0:
-            return
+        if mesh.n_cells == 0:
+            return cls(
+                min_max_volume_ratio=0.0,
+                cell_skewness_values=np.array([]),
+                cell_non_orthogonality_values=np.array([]),
+                cell_aspect_ratio_values=np.array([]),
+                connectivity_issues=[],
+            )
 
-        self._compute_volume_ratio(mesh)
-        self._compute_geometric_metrics(mesh)
-        self._check_connectivity(mesh)
-        self._is_computed = True
+        min_max_volume_ratio = cls._compute_volume_ratio(mesh)
+        skewness, aspect_ratio = cls._compute_geometric_metrics(mesh)
+        non_orthogonality = cls._compute_non_orthogonality(mesh)
+        connectivity_issues = cls._check_connectivity(mesh)
 
-    def _initialize_metrics(self, num_cells: int) -> None:
-        """Resets all metric attributes to their initial state."""
-        self.min_max_volume_ratio = 0.0
-        self.cell_skewness_values = np.zeros(num_cells)
-        self.cell_non_orthogonality_values = np.zeros(num_cells)
-        self.cell_aspect_ratio_values = np.zeros(num_cells)
-        self.connectivity_issues = []
-        self._is_computed = False
+        return cls(
+            min_max_volume_ratio=min_max_volume_ratio,
+            cell_skewness_values=skewness,
+            cell_non_orthogonality_values=non_orthogonality,
+            cell_aspect_ratio_values=aspect_ratio,
+            connectivity_issues=connectivity_issues,
+        )
 
-    def _compute_volume_ratio(self, mesh) -> None:
+    @staticmethod
+    def _compute_volume_ratio(mesh: "PolyMesh") -> float:
         """Calculates the ratio of the smallest to the largest cell volume."""
         min_vol = np.min(mesh.cell_volumes)
         max_vol = np.max(mesh.cell_volumes)
-        self.min_max_volume_ratio = min_vol / max_vol if max_vol > 1e-12 else 0.0
+        return min_vol / max_vol if max_vol > GEOMETRY_TOLERANCE else 0.0
 
-    def _compute_geometric_metrics(self, mesh) -> None:
+    @staticmethod
+    def _compute_geometric_metrics(mesh: "PolyMesh") -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes cell-based geometric metrics like skewness and aspect ratio.
         """
-        if mesh.dimension != 2:
-            return  # Implemented only for 2D meshes currently.
+        n_cells = mesh.n_cells
+        skewness = np.zeros(n_cells)
+        aspect_ratio = np.zeros(n_cells)
 
-        for i, conn in enumerate(mesh.cell_connectivity):
-            nodes = mesh.node_coords[conn][:, :2]
-            if len(nodes) == 3:
-                self._compute_triangle_metrics(i, nodes)
-            elif len(nodes) == 4:
-                self._compute_quad_metrics(i, nodes)
+        # Note: This implementation is limited to 2D meshes with triangle and quad cells.
+        # To expand, add handlers for 3D cell types and other polygon shapes.
+        if mesh.dimension == 2:
+            for i, conn in enumerate(mesh.cell_node_connectivity):
+                nodes = mesh.node_coords[conn][:, :2]
+                if len(nodes) == 3:
+                    s, ar = MeshQuality._compute_triangle_metrics(nodes)
+                    skewness[i] = s
+                    aspect_ratio[i] = ar
+                elif len(nodes) == 4:
+                    s, ar = MeshQuality._compute_quad_metrics(nodes)
+                    skewness[i] = s
+                    aspect_ratio[i] = ar
 
-        self._compute_non_orthogonality(mesh)
+        return skewness, aspect_ratio
 
-    def _compute_triangle_metrics(self, index: int, nodes: np.ndarray) -> None:
+    @staticmethod
+    def _compute_triangle_metrics(nodes: np.ndarray) -> Tuple[float, float]:
         """Computes skewness and aspect ratio for a single triangular cell."""
         lengths = np.linalg.norm(np.roll(nodes, -1, axis=0) - nodes, axis=1)
-        if np.min(lengths) < 1e-12:
-            self.cell_skewness_values[index] = 1.0
-            self.cell_aspect_ratio_values[index] = np.inf
-            return
+        if np.min(lengths) < GEOMETRY_TOLERANCE:
+            return 1.0, np.inf
 
         # Angle-based skewness
         angles = np.degrees(
@@ -120,19 +138,18 @@ class MeshQuality:
                 for i in range(3)
             ]
         )
-        self.cell_skewness_values[index] = np.max(np.abs(angles - 60.0)) / 60.0
+        skewness = np.max(np.abs(angles - IDEAL_TRIANGLE_ANGLE)) / IDEAL_TRIANGLE_ANGLE
 
         # Aspect ratio
-        self.cell_aspect_ratio_values[index] = np.max(lengths) / np.min(lengths)
+        aspect_ratio = np.max(lengths) / np.min(lengths)
+        return skewness, aspect_ratio
 
-    def _compute_quad_metrics(self, index: int, nodes: np.ndarray) -> None:
+    @staticmethod
+    def _compute_quad_metrics(nodes: np.ndarray) -> Tuple[float, float]:
         """Computes skewness and aspect ratio for a single quadrilateral cell."""
-        # Edge lengths
         edge_lengths = np.linalg.norm(np.roll(nodes, -1, axis=0) - nodes, axis=1)
-        if np.min(edge_lengths) < 1e-12:
-            self.cell_skewness_values[index] = 1.0
-            self.cell_aspect_ratio_values[index] = np.inf
-            return
+        if np.min(edge_lengths) < GEOMETRY_TOLERANCE:
+            return 1.0, np.inf
 
         # Angle-based skewness
         angles = np.degrees(
@@ -154,120 +171,57 @@ class MeshQuality:
                 for j in range(4)
             ]
         )
-        self.cell_skewness_values[index] = np.max(np.abs(angles - 90.0)) / 90.0
+        skewness = np.max(np.abs(angles - IDEAL_QUAD_ANGLE)) / IDEAL_QUAD_ANGLE
 
         # Aspect ratio
-        self.cell_aspect_ratio_values[index] = np.max(edge_lengths) / np.min(
-            edge_lengths
-        )
+        aspect_ratio = np.max(edge_lengths) / np.min(edge_lengths)
+        return skewness, aspect_ratio
 
-    def _compute_non_orthogonality(self, mesh) -> None:
+    @staticmethod
+    def _compute_non_orthogonality(mesh: "PolyMesh") -> np.ndarray:
         """
         Computes the maximum non-orthogonality for each cell.
         """
-        for ci in range(mesh.num_cells):
+        non_orthogonality = np.zeros(mesh.n_cells)
+        for ci in range(mesh.n_cells):
             max_non_ortho = 0.0
-            for fi, _ in enumerate(mesh.cell_faces[ci]):
-                if fi >= mesh.face_midpoints.shape[1]:
+            for fi, _ in enumerate(mesh.cell_face_nodes[ci]):
+                if fi >= mesh.cell_face_midpoints.shape[1]:
                     continue
-                vec_to_face = mesh.face_midpoints[ci, fi] - mesh.cell_centroids[ci]
+                vec_to_face = mesh.cell_face_midpoints[ci, fi] - mesh.cell_centroids[ci]
                 norm_vec = np.linalg.norm(vec_to_face)
-                norm_normal = np.linalg.norm(mesh.face_normals[ci, fi])
+                norm_normal = np.linalg.norm(mesh.cell_face_normals[ci, fi])
 
-                if norm_vec > 1e-12 and norm_normal > 1e-12:
-                    dot_p = np.dot(vec_to_face, mesh.face_normals[ci, fi])
+                if norm_vec > GEOMETRY_TOLERANCE and norm_normal > GEOMETRY_TOLERANCE:
+                    dot_p = np.dot(vec_to_face, mesh.cell_face_normals[ci, fi])
                     cos_angle = np.clip(dot_p / (norm_vec * norm_normal), -1.0, 1.0)
                     angle_deg = np.degrees(np.arccos(cos_angle))
                     max_non_ortho = max(max_non_ortho, angle_deg)
-            self.cell_non_orthogonality_values[ci] = max_non_ortho
+            non_orthogonality[ci] = max_non_ortho
+        return non_orthogonality
 
-    def _check_connectivity(self, mesh) -> None:
+    @staticmethod
+    def _check_connectivity(mesh: "PolyMesh") -> List[str]:
         """Checks for topological issues like unreferenced nodes."""
-        referenced_nodes = set(node for conn in mesh.cell_connectivity for node in conn)
-        if len(referenced_nodes) < mesh.num_nodes:
-            unreferenced = set(range(mesh.num_nodes)) - referenced_nodes
-            self.connectivity_issues.append(
-                f"Found {len(unreferenced)} unreferenced nodes."
-            )
+        issues = []
+        referenced_nodes = set(
+            node for conn in mesh.cell_node_connectivity for node in conn
+        )
+        if len(referenced_nodes) < mesh.n_nodes:
+            unreferenced = set(range(mesh.n_nodes)) - referenced_nodes
+            issues.append(f"Found {len(unreferenced)} unreferenced nodes.")
 
         # Check for duplicate cells
-        unique_cells = {tuple(sorted(conn)) for conn in mesh.cell_connectivity}
-        if len(unique_cells) < mesh.num_cells:
-            self.connectivity_issues.append("Found duplicate cells.")
+        unique_cells = {tuple(sorted(conn)) for conn in mesh.cell_node_connectivity}
+        if len(unique_cells) < mesh.n_cells:
+            issues.append("Found duplicate cells.")
 
         face_map: Dict[Tuple[int, ...], List[int]] = {}
-        for ci, faces in enumerate(mesh.cell_faces):
+        for ci, faces in enumerate(mesh.cell_face_nodes):
             for face in faces:
                 key = tuple(sorted(face))
                 face_map.setdefault(key, []).append(ci)
         for key, cells in face_map.items():
             if len(cells) > 2:
-                self.connectivity_issues.append(
-                    f"Non-manifold face {key} shared by {len(cells)} cells."
-                )
-
-    def print_summary(self) -> None:
-        """
-        Prints a formatted summary of the computed mesh quality metrics.
-        """
-        if not self._is_computed:
-            print("Quality metrics not computed. Run compute() first.")
-            return
-
-        print(f"\n{'--- Mesh Quality Metrics ---':^80}\n")
-        self._print_metric_table()
-        self._print_connectivity_issues()
-
-    def _print_metric_table(self) -> None:
-        """Prints the table of quality metrics."""
-        print(f"  {'Metric':<25} {'Min':>15} {'Max':>15} {'Average':>15}")
-        print(f"  {'-'*24} {'-'*15} {'-'*15} {'-'*15}")
-
-        self._print_metric_row(
-            "Min/Max Volume Ratio",
-            np.array(self.min_max_volume_ratio),
-            is_single_value=True,
-        )
-        self._print_metric_row("Skewness", self.cell_skewness_values)
-        self._print_metric_row(
-            "Non-Orthogonality (deg)", self.cell_non_orthogonality_values
-        )
-        self._print_metric_row(
-            "Aspect Ratio", self.cell_aspect_ratio_values, filter_finite=True
-        )
-
-    def _print_metric_row(
-        self,
-        name: str,
-        values: np.ndarray,
-        is_single_value: bool = False,
-        filter_finite: bool = False,
-    ) -> None:
-        """Prints a single row in the metric table."""
-        if is_single_value:
-            if values > 0:
-                print(f"  {name:<25} {values:>15.4f} {'-':>15} {'-':>15}")
-            return
-
-        if values.size > 0 and np.any(values):
-            if filter_finite:
-                values = values[np.isfinite(values)]
-            if values.size > 0:
-                min_val, max_val, mean_val = (
-                    np.min(values),
-                    np.max(values),
-                    np.mean(values),
-                )
-                print(
-                    f"  {name:<25} {min_val:>15.4f} {max_val:>15.4f} {mean_val:>15.4f}"
-                )
-
-    def _print_connectivity_issues(self) -> None:
-        """Prints any connectivity issues found."""
-        print(f"\n{'--- Connectivity Check ---':^80}\n")
-        if self.connectivity_issues:
-            print("  Issues Found:")
-            for issue in self.connectivity_issues:
-                print(f"    - {issue}")
-        else:
-            print("  No connectivity issues found.")
+                issues.append(f"Non-manifold face {key} shared by {len(cells)} cells.")
+        return issues

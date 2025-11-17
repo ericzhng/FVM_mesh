@@ -15,17 +15,16 @@ Key modules:
 - quality:    Functions to compute mesh quality metrics.
 """
 
-from .core_mesh import CoreMesh
 from .poly_mesh import PolyMesh
-from .local_mesh import LocalMesh, create_local_meshes
-from .partition import partition_mesh
+from .local_mesh import LocalMesh
+from .mesh_partition_manager import MeshPartitionManager
 from .reorder import renumber_nodes, renumber_cells
+from .partition import partition_mesh
 
 __all__ = [
-    "CoreMesh",
     "PolyMesh",
     "LocalMesh",
-    "create_local_meshes",
+    "MeshPartitionManager",
     "partition_mesh",
     "renumber_nodes",
     "renumber_cells",
