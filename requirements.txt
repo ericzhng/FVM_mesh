@@ -1,6 +1,0 @@
-pyvista
-numpy
-matplotlib
-gmsh
-scipy
-metis
