@@ -18,8 +18,8 @@ option(USE_METIS "Enable METIS library for graph partitioning" ON)
 # METIS uses custom FindMETIS.cmake or environment variables
 # =============================================================================
 
-# Find Gmsh (required) - uses FindGmsh.cmake with bundled SDK
-find_package(gmsh CONFIG REQUIRED)
+# Find Gmsh (required) - uses FindGmsh.cmake
+find_package(Gmsh REQUIRED)
 message(STATUS "Gmsh found: ${Gmsh_LIBRARIES}")
 
 # Find METIS (optional)

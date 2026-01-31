@@ -18,30 +18,46 @@
 #include <string>
 #include <vector>
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     // Parse command line arguments (optional)
-    double length = 1.0;   // Length of rectangle in x-direction
-    double height = 1.0;   // Height of rectangle in y-direction
+    double length = 1.0; // Length of rectangle in x-direction
+    double height = 1.0; // Height of rectangle in y-direction
     double meshSize = 0.05;
     double charLength = 0.01;
     std::string outputDir = "data";
     bool showGui = false;
 
-    for (int i = 1; i < argc; ++i) {
+    std::cout << "\n Program Started !\n";
+    for (int i = 1; i < argc; ++i)
+    {
         std::string arg = argv[i];
-        if (arg == "--length" && i + 1 < argc) {
+        if (arg == "--length" && i + 1 < argc)
+        {
             length = std::stod(argv[++i]);
-        } else if (arg == "--height" && i + 1 < argc) {
+        }
+        else if (arg == "--height" && i + 1 < argc)
+        {
             height = std::stod(argv[++i]);
-        } else if (arg == "--mesh-size" && i + 1 < argc) {
+        }
+        else if (arg == "--mesh-size" && i + 1 < argc)
+        {
             meshSize = std::stod(argv[++i]);
-        } else if (arg == "--char-length" && i + 1 < argc) {
+        }
+        else if (arg == "--char-length" && i + 1 < argc)
+        {
             charLength = std::stod(argv[++i]);
-        } else if (arg == "--output" && i + 1 < argc) {
+        }
+        else if (arg == "--output" && i + 1 < argc)
+        {
             outputDir = argv[++i];
-        } else if (arg == "--gui") {
+        }
+        else if (arg == "--gui")
+        {
             showGui = true;
-        } else if (arg == "--help" || arg == "-h") {
+        }
+        else if (arg == "--help" || arg == "-h")
+        {
             std::cout << "Usage: " << argv[0] << " [options]\n"
                       << "Options:\n"
                       << "  --length <value>       Rectangle length (default: 1.0)\n"
@@ -64,7 +80,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  Char length: " << charLength << "\n";
     std::cout << "  Output: " << outputDir << "\n\n";
 
-    try {
+    try
+    {
         // Initialize Gmsh
         gmsh::initialize();
         gmsh::model::add("test_polygon");
@@ -82,7 +99,8 @@ int main(int argc, char* argv[]) {
 
         // Extract line tags
         std::vector<int> lineTags;
-        for (const auto& [dim, tag] : boundaryEntities) {
+        for (const auto &[dim, tag] : boundaryEntities)
+        {
             lineTags.push_back(std::abs(tag));
         }
 
@@ -94,31 +112,42 @@ int main(int argc, char* argv[]) {
 
         const double tol = 1e-9;
 
-        for (int lineTag : lineTags) {
+        for (int lineTag : lineTags)
+        {
             double minX, minY, minZ, maxX, maxY, maxZ;
             gmsh::model::getBoundingBox(1, lineTag, minX, minY, minZ, maxX, maxY, maxZ);
 
-            if (std::abs(minY - 0.0) < tol && std::abs(maxY - 0.0) < tol) {
+            if (std::abs(minY - 0.0) < tol && std::abs(maxY - 0.0) < tol)
+            {
                 bottomBc = lineTag;
-            } else if (std::abs(minX - length) < tol && std::abs(maxX - length) < tol) {
+            }
+            else if (std::abs(minX - length) < tol && std::abs(maxX - length) < tol)
+            {
                 rightBc = lineTag;
-            } else if (std::abs(minY - height) < tol && std::abs(maxY - height) < tol) {
+            }
+            else if (std::abs(minY - height) < tol && std::abs(maxY - height) < tol)
+            {
                 topBc = lineTag;
-            } else if (std::abs(minX - 0.0) < tol && std::abs(maxX - 0.0) < tol) {
+            }
+            else if (std::abs(minX - 0.0) < tol && std::abs(maxX - 0.0) < tol)
+            {
                 leftBc = lineTag;
             }
         }
 
         // Add physical groups for boundaries
-        if (leftBc != -1) {
+        if (leftBc != -1)
+        {
             gmsh::model::addPhysicalGroup(1, {leftBc}, -1, "inlet");
             std::cout << "Added boundary: inlet (line " << leftBc << ")\n";
         }
-        if (rightBc != -1) {
+        if (rightBc != -1)
+        {
             gmsh::model::addPhysicalGroup(1, {rightBc}, -1, "outlet");
             std::cout << "Added boundary: outlet (line " << rightBc << ")\n";
         }
-        if (bottomBc != -1 && topBc != -1) {
+        if (bottomBc != -1 && topBc != -1)
+        {
             gmsh::model::addPhysicalGroup(1, {bottomBc, topBc}, -1, "wall");
             std::cout << "Added boundary: wall (lines " << bottomBc << ", " << topBc << ")\n";
         }
@@ -134,7 +163,7 @@ int main(int argc, char* argv[]) {
         mesher.generate(meshParams, "sample_rect_mesh.msh");
 
         // Get mesh data for export
-        const fvm::MeshData& meshData = mesher.getMeshData();
+        const fvm::MeshData &meshData = mesher.getMeshData();
 
         // Write to VTK format (legacy)
         fvm::VTKWriter::writeVTK(meshData, outputDir + "/sample_rect_mesh.vtk");
@@ -157,7 +186,8 @@ int main(int argc, char* argv[]) {
         std::cout << "  - " << outputDir << "/openfoam/constant/polyMesh/ (OpenFOAM format)\n";
 
         // Show GUI if requested
-        if (showGui) {
+        if (showGui)
+        {
             std::cout << "\nOpening Gmsh GUI...\n";
             gmsh::fltk::run();
         }
@@ -167,8 +197,9 @@ int main(int argc, char* argv[]) {
 
         std::cout << "\nDone!\n";
         return 0;
-
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         std::cerr << "Error: " << e.what() << std::endl;
         gmsh::finalize();
         return 1;
