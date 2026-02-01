@@ -67,7 +67,7 @@ install(TARGETS ${PROJECT_NAME}
 
 # Install libraries with proper export configuration
 install(TARGETS meshgen polymesh
-    EXPORT FVM_MeshTargets
+    EXPORT FVM_meshTargets
     ARCHIVE DESTINATION ${FVM_INSTALL_LIBDIR} COMPONENT Development
     LIBRARY DESTINATION ${FVM_INSTALL_LIBDIR} COMPONENT Runtime
     RUNTIME DESTINATION ${FVM_INSTALL_BINDIR} COMPONENT Runtime  # For Windows DLLs
@@ -91,8 +91,8 @@ install(DIRECTORY polymesh/
 )
 
 # Export targets for use by other projects
-install(EXPORT FVM_MeshTargets
-    FILE FVM_MeshTargets.cmake
+install(EXPORT FVM_meshTargets
+    FILE FVM_meshTargets.cmake
     NAMESPACE FVM::
     DESTINATION ${FVM_INSTALL_CMAKEDIR}
     COMPONENT Development
@@ -101,22 +101,22 @@ install(EXPORT FVM_MeshTargets
 # Generate package version file
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_meshConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
 # Generate package config file from template
 configure_package_config_file(
-    "${CMAKE_SOURCE_DIR}/cmake/FVM_MeshConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfig.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/FVM_meshConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_meshConfig.cmake"
     INSTALL_DESTINATION ${FVM_INSTALL_CMAKEDIR}
 )
 
 # Install CMake configuration files
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_meshConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_meshConfigVersion.cmake"
     DESTINATION ${FVM_INSTALL_CMAKEDIR}
     COMPONENT Development
 )

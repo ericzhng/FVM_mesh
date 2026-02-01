@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(FVM_Mesh VERSION 1.0.0 LANGUAGES CXX)
+project(FVM_mesh VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,10 +80,10 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
-set(CPACK_PACKAGE_VENDOR "FVM_Mesh Project")
+set(CPACK_PACKAGE_VENDOR "FVM_mesh Project")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Finite Volume Method Mesh Generation Library")
 set(CPACK_PACKAGE_DESCRIPTION "A C++ library for generating and partitioning meshes for finite volume methods, featuring Gmsh integration and METIS-based partitioning.")
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/your-org/FVM_Mesh")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/your-org/FVM_mesh")
 set(CPACK_PACKAGE_CONTACT "your-email@example.com")
 
 # Optional resource files (only set if they exist)
@@ -94,28 +94,37 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/README.md")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
 endif()
 
-# Package file name
-set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+# Determine library type suffix for package name
+if(BUILD_SHARED)
+    set(FVM_LIB_SUFFIX "shared")
+else()
+    set(FVM_LIB_SUFFIX "static")
+endif()
+
+# Package file name with build type and library type
+set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_BUILD_TYPE}-${FVM_LIB_SUFFIX}")
 
 # Component-based installation
 set(CPACK_COMPONENTS_ALL Runtime Development)
 set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Runtime Libraries")
-set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Shared libraries and executable needed to run FVM_Mesh applications")
+set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Shared libraries and executable needed to run FVM_mesh applications")
 set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "Development Files")
-set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Headers and CMake files needed to develop with FVM_Mesh")
+set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Headers and CMake files needed to develop with FVM_mesh")
 set(CPACK_COMPONENT_DEVELOPMENT_DEPENDS Runtime)
 
 # Platform-specific generator settings
 if(WIN32)
-    # NSIS installer for Windows
-    set(CPACK_GENERATOR "NSIS;ZIP")
+    # Default generators for Windows (can be overridden by CMake presets or command line)
+    # When using presets, the packagePresets specify the generator, so we only set a default
+    if(NOT CPACK_GENERATOR)
+        set(CPACK_GENERATOR "ZIP")
+    endif()
 
     # Find NSIS executable - check common locations and environment variable
     find_program(NSIS_EXECUTABLE
         NAMES makensis
         PATHS
             "$ENV{NSIS_ROOT}"
-            "C:/Software/NSIS"
             "C:/Program Files/NSIS"
             "C:/Program Files (x86)/NSIS"
         PATH_SUFFIXES bin
@@ -153,15 +162,19 @@ if(WIN32)
     ")
 
 elseif(APPLE)
-    # macOS package
-    set(CPACK_GENERATOR "DragNDrop;TGZ")
+    # macOS package (default, can be overridden by presets)
+    if(NOT CPACK_GENERATOR)
+        set(CPACK_GENERATOR "TGZ")
+    endif()
     set(CPACK_DMG_VOLUME_NAME "${PROJECT_NAME}")
     set(CPACK_DMG_FORMAT "UDBZ")
     set(CPACK_BUNDLE_NAME "${PROJECT_NAME}")
 
 elseif(UNIX)
-    # Linux packages
-    set(CPACK_GENERATOR "TGZ;DEB;RPM")
+    # Linux packages (default, can be overridden by presets)
+    if(NOT CPACK_GENERATOR)
+        set(CPACK_GENERATOR "TGZ")
+    endif()
 
     # DEB specific settings
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "${CPACK_PACKAGE_CONTACT}")
@@ -196,7 +209,7 @@ include(CPack)
 # Configuration Summary
 # =============================================================================
 message(STATUS "")
-message(STATUS "=== FVM_Mesh Configuration Summary ===")
+message(STATUS "=== FVM_mesh Configuration Summary ===")
 message(STATUS "Version: ${PROJECT_VERSION}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")

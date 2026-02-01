@@ -123,6 +123,20 @@
     ],
     "packagePresets": [
         {
+            "name": "debug-static-zip",
+            "displayName": "Package Debug Static (ZIP)",
+            "configurePreset": "debug-static",
+            "generators": ["ZIP"],
+            "configurations": ["Debug"]
+        },
+        {
+            "name": "debug-shared-zip",
+            "displayName": "Package Debug Shared (ZIP)",
+            "configurePreset": "debug-shared",
+            "generators": ["ZIP"],
+            "configurations": ["Debug"]
+        },
+        {
             "name": "release-static-zip",
             "displayName": "Package Release Static (ZIP)",
             "configurePreset": "release-static",

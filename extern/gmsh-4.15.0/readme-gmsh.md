@@ -137,7 +137,7 @@ extern/gmsh-4.15.0/
 After building, verify the executable imports C API functions (not mangled C++):
 
 ```bash
-objdump -p FVM_Mesh.exe | grep -A 20 "Import Table" | grep gmsh
+objdump -p FVM_mesh.exe | grep -A 20 "Import Table" | grep gmsh
 ```
 
 **Good** (C API):
@@ -159,7 +159,7 @@ gmshModelAdd
 cp extern/gmsh-4.15.0/dll/gmsh-4.15.dll build/src/Release/
 
 # Run
-./build/src/Release/FVM_Mesh.exe --help
+./build/src/Release/FVM_mesh.exe --help
 ```
 
 ---

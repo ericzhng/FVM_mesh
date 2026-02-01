@@ -291,16 +291,16 @@ The library provides data structures suitable for:
 
 ```bash
 # Basic usage
-./FVM_Mesh
+./FVM_mesh
 
 # With options
-./FVM_Mesh --length 2.0 --height 1.0 --char-length 0.02 --output my_mesh
+./FVM_mesh --length 2.0 --height 1.0 --char-length 0.02 --output my_mesh
 
 # Show Gmsh GUI after generation
-./FVM_Mesh --gui
+./FVM_mesh --gui
 
 # Show help
-./FVM_Mesh --help
+./FVM_mesh --help
 ```
 
 ### Command Line Options
