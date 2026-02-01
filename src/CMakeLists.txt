@@ -29,6 +29,16 @@ if(WIN32 AND GMSH_DLL)
     )
 endif()
 
+# Copy METIS DLL to output directory after build (Windows only)
+if(WIN32 AND HAVE_METIS AND METIS_DLL)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${METIS_DLL}"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+        COMMENT "Copying METIS DLL to output directory"
+    )
+endif()
+
 # Copy our library DLLs to executable directory (Windows shared builds only)
 if(WIN32 AND BUILD_SHARED)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -45,15 +55,92 @@ if(WIN32 AND BUILD_SHARED)
     )
 endif()
 
-# Installation
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-install(TARGETS meshgen polymesh
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin  # For Windows DLLs
+# =============================================================================
+# Installation Rules
+# =============================================================================
+
+# Install the main executable
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION ${FVM_INSTALL_BINDIR}
+    COMPONENT Runtime
 )
-install(FILES fvm_export.hpp DESTINATION include)
-install(DIRECTORY meshgen/ DESTINATION include/meshgen
-    FILES_MATCHING PATTERN "*.hpp")
-install(DIRECTORY polymesh/ DESTINATION include/polymesh
-    FILES_MATCHING PATTERN "*.hpp")
+
+# Install libraries with proper export configuration
+install(TARGETS meshgen polymesh
+    EXPORT FVM_MeshTargets
+    ARCHIVE DESTINATION ${FVM_INSTALL_LIBDIR} COMPONENT Development
+    LIBRARY DESTINATION ${FVM_INSTALL_LIBDIR} COMPONENT Runtime
+    RUNTIME DESTINATION ${FVM_INSTALL_BINDIR} COMPONENT Runtime  # For Windows DLLs
+    INCLUDES DESTINATION ${FVM_INSTALL_INCLUDEDIR}
+)
+
+# Install header files
+install(FILES fvm_export.hpp
+    DESTINATION ${FVM_INSTALL_INCLUDEDIR}
+    COMPONENT Development
+)
+install(DIRECTORY meshgen/
+    DESTINATION ${FVM_INSTALL_INCLUDEDIR}/meshgen
+    COMPONENT Development
+    FILES_MATCHING PATTERN "*.hpp"
+)
+install(DIRECTORY polymesh/
+    DESTINATION ${FVM_INSTALL_INCLUDEDIR}/polymesh
+    COMPONENT Development
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+# Export targets for use by other projects
+install(EXPORT FVM_MeshTargets
+    FILE FVM_MeshTargets.cmake
+    NAMESPACE FVM::
+    DESTINATION ${FVM_INSTALL_CMAKEDIR}
+    COMPONENT Development
+)
+
+# Generate package version file
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Generate package config file from template
+configure_package_config_file(
+    "${CMAKE_SOURCE_DIR}/cmake/FVM_MeshConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfig.cmake"
+    INSTALL_DESTINATION ${FVM_INSTALL_CMAKEDIR}
+)
+
+# Install CMake configuration files
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/FVM_MeshConfigVersion.cmake"
+    DESTINATION ${FVM_INSTALL_CMAKEDIR}
+    COMPONENT Development
+)
+
+# Install FindGmsh and FindMETIS for consumers who might need them
+install(FILES
+    "${CMAKE_SOURCE_DIR}/cmake/FindGmsh.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/FindMETIS.cmake"
+    DESTINATION ${FVM_INSTALL_CMAKEDIR}/modules
+    COMPONENT Development
+)
+
+# Copy Gmsh DLL to install bin directory (Windows only)
+if(WIN32 AND GMSH_DLL)
+    install(FILES "${GMSH_DLL}"
+        DESTINATION ${FVM_INSTALL_BINDIR}
+        COMPONENT Runtime
+    )
+endif()
+
+# Copy METIS DLL if available (Windows only)
+if(WIN32 AND HAVE_METIS AND METIS_DLL)
+    install(FILES "${METIS_DLL}"
+        DESTINATION ${FVM_INSTALL_BINDIR}
+        COMPONENT Runtime
+    )
+endif()

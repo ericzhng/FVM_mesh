@@ -1,0 +1,57 @@
+@PACKAGE_INIT@
+
+# FVM_Mesh CMake Package Configuration File
+#
+# This file is used by find_package() to locate the FVM_Mesh package.
+#
+# Usage:
+#   find_package(FVM_Mesh REQUIRED)
+#   target_link_libraries(your_target PRIVATE FVM::meshgen FVM::polymesh)
+#
+# The following targets are defined:
+#   FVM::meshgen  - Gmsh-based geometry and mesh generation library
+#   FVM::polymesh - Partition, reordering, and mesh utilities library
+#
+# Variables set by this config:
+#   FVM_Mesh_FOUND        - TRUE if the package was found
+#   FVM_Mesh_VERSION      - Version of the package
+#   FVM_Mesh_INCLUDE_DIRS - Include directories (for reference)
+#   FVM_Mesh_LIBRARIES    - Libraries to link (for reference)
+
+set(FVM_Mesh_VERSION "@PROJECT_VERSION@")
+
+# Compute the installation prefix relative to this file
+get_filename_component(FVM_Mesh_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+# Add the modules directory to CMAKE_MODULE_PATH for FindGmsh.cmake, etc.
+list(APPEND CMAKE_MODULE_PATH "${FVM_Mesh_CMAKE_DIR}/modules")
+
+# Find dependencies
+include(CMakeFindDependencyMacro)
+
+# Gmsh is required
+find_dependency(Gmsh REQUIRED)
+
+# METIS is optional - if it was used when building, try to find it
+set(_fvm_mesh_have_metis @HAVE_METIS@)
+if(_fvm_mesh_have_metis)
+    find_dependency(METIS)
+endif()
+unset(_fvm_mesh_have_metis)
+
+# Include the exported targets
+if(NOT TARGET FVM::meshgen)
+    include("${FVM_Mesh_CMAKE_DIR}/FVM_MeshTargets.cmake")
+endif()
+
+# Provide convenience variables (optional, targets are preferred)
+set(FVM_Mesh_INCLUDE_DIRS "@PACKAGE_FVM_INSTALL_INCLUDEDIR@")
+set(FVM_Mesh_LIBRARIES FVM::meshgen FVM::polymesh)
+
+# Check required components
+check_required_components(FVM_Mesh)
+
+# Print status message
+if(NOT FVM_Mesh_FIND_QUIETLY)
+    message(STATUS "Found FVM_Mesh: ${FVM_Mesh_CMAKE_DIR} (version ${FVM_Mesh_VERSION})")
+endif()

@@ -1,0 +1,194 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Visual Studio 17 2022",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "installDir": "${sourceDir}/install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": {
+                    "type": "FILEPATH",
+                    "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+                }
+            },
+            "environment": {
+                "NSIS_ROOT": "C:/Software/NSIS"
+            }
+        },
+        {
+            "name": "debug-static",
+            "displayName": "Debug Static",
+            "description": "Debug build with static libraries",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_SHARED": "OFF"
+            }
+        },
+        {
+            "name": "debug-shared",
+            "displayName": "Debug Shared",
+            "description": "Debug build with shared libraries (DLLs)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_SHARED": "ON"
+            }
+        },
+        {
+            "name": "release-static",
+            "displayName": "Release Static",
+            "description": "Release build with static libraries",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_SHARED": "OFF"
+            }
+        },
+        {
+            "name": "release-shared",
+            "displayName": "Release Shared",
+            "description": "Release build with shared libraries (DLLs)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_SHARED": "ON"
+            }
+        },
+        {
+            "name": "relwithdebinfo-static",
+            "displayName": "RelWithDebInfo Static",
+            "description": "Release with debug info build with static libraries",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "BUILD_SHARED": "OFF"
+            }
+        },
+        {
+            "name": "relwithdebinfo-shared",
+            "displayName": "RelWithDebInfo Shared",
+            "description": "Release with debug info build with shared libraries (DLLs)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "BUILD_SHARED": "ON"
+            }
+        },
+        {
+            "name": "custom",
+            "displayName": "Custom Configuration",
+            "description": "Custom build - set variables via command line or environment",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "$env{FVM_BUILD_TYPE}",
+                "BUILD_SHARED": "$env{FVM_BUILD_SHARED}",
+                "CMAKE_INSTALL_PREFIX": "$env{FVM_INSTALL_PREFIX}",
+                "USE_METIS": "$env{FVM_USE_METIS}"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug-static",
+            "displayName": "Build Debug Static",
+            "configurePreset": "debug-static"
+        },
+        {
+            "name": "debug-shared",
+            "displayName": "Build Debug Shared",
+            "configurePreset": "debug-shared"
+        },
+        {
+            "name": "release-static",
+            "displayName": "Build Release Static",
+            "configurePreset": "release-static"
+        },
+        {
+            "name": "release-shared",
+            "displayName": "Build Release Shared",
+            "configurePreset": "release-shared"
+        },
+        {
+            "name": "relwithdebinfo-static",
+            "displayName": "Build RelWithDebInfo Static",
+            "configurePreset": "relwithdebinfo-static"
+        },
+        {
+            "name": "relwithdebinfo-shared",
+            "displayName": "Build RelWithDebInfo Shared",
+            "configurePreset": "relwithdebinfo-shared"
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "release-static-zip",
+            "displayName": "Package Release Static (ZIP)",
+            "configurePreset": "release-static",
+            "generators": ["ZIP"]
+        },
+        {
+            "name": "release-shared-zip",
+            "displayName": "Package Release Shared (ZIP)",
+            "configurePreset": "release-shared",
+            "generators": ["ZIP"]
+        },
+        {
+            "name": "release-static-nsis",
+            "displayName": "Package Release Static (NSIS Installer)",
+            "configurePreset": "release-static",
+            "generators": ["NSIS"]
+        },
+        {
+            "name": "release-shared-nsis",
+            "displayName": "Package Release Shared (NSIS Installer)",
+            "configurePreset": "release-shared",
+            "generators": ["NSIS"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "release-static-package",
+            "displayName": "Build and Package Release Static",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "release-static"
+                },
+                {
+                    "type": "build",
+                    "name": "release-static"
+                },
+                {
+                    "type": "package",
+                    "name": "release-static-zip"
+                }
+            ]
+        },
+        {
+            "name": "release-shared-package",
+            "displayName": "Build and Package Release Shared",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "release-shared"
+                },
+                {
+                    "type": "build",
+                    "name": "release-shared"
+                },
+                {
+                    "type": "package",
+                    "name": "release-shared-zip"
+                }
+            ]
+        }
+    ]
+}

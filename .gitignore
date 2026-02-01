@@ -80,3 +80,5 @@ ENV/
 trunk/
 build_test/
 build_shared/
+
+install/
