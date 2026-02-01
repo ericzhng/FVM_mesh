@@ -28,7 +28,7 @@ namespace fvm {
  * - Computing halo cell information for inter-partition communication
  * - Creating LocalMesh instances for each partition
  */
-class MeshPartitionManager {
+class MESH_PROCESSING_API MeshPartitionManager {
 public:
     /**
      * @brief Partitions a global mesh and creates a list of local mesh objects.

@@ -9,6 +9,7 @@
  * numerical simulations.
  */
 
+#include "mesh_processing_export.hpp"
 #include <string>
 #include <vector>
 
@@ -29,7 +30,7 @@ constexpr double IDEAL_QUAD_ANGLE = 90.0;
  * geometric metrics like skewness, aspect ratio, and non-orthogonality,
  * as well as topological connectivity checks.
  */
-class MeshQuality {
+class MESH_PROCESSING_API MeshQuality {
 public:
     // =========================================================================
     // Quality Metrics Data

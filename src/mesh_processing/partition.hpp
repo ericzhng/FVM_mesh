@@ -13,6 +13,7 @@
  * - Hierarchical: Coordinate bisection without external dependencies
  */
 
+#include "mesh_processing_export.hpp"
 #include <string>
 #include <vector>
 
@@ -34,7 +35,7 @@ class PolyMesh;
  * @return A vector of partition IDs for each cell
  * @throws std::runtime_error if partitioning fails
  */
-std::vector<int> partitionMesh(
+MESH_PROCESSING_API std::vector<int> partitionMesh(
     const PolyMesh& mesh,
     int nParts,
     const std::string& method = "metis",
@@ -53,7 +54,7 @@ std::vector<int> partitionMesh(
  * @return A vector of partition IDs for each cell
  * @throws std::runtime_error if METIS is not available or fails
  */
-std::vector<int> partitionWithMetis(
+MESH_PROCESSING_API std::vector<int> partitionWithMetis(
     const PolyMesh& mesh,
     int nParts,
     const std::vector<double>& cellWeights = {}
@@ -71,7 +72,7 @@ std::vector<int> partitionWithMetis(
  * @param cellWeights Optional cell weights
  * @return A vector of partition IDs for each cell
  */
-std::vector<int> partitionWithHierarchical(
+MESH_PROCESSING_API std::vector<int> partitionWithHierarchical(
     const PolyMesh& mesh,
     int nParts,
     const std::vector<double>& cellWeights = {}
@@ -81,7 +82,7 @@ std::vector<int> partitionWithHierarchical(
  * @brief Prints a summary of the cell distribution across partitions.
  * @param parts The partition assignment vector
  */
-void printPartitionSummary(const std::vector<int>& parts);
+MESH_PROCESSING_API void printPartitionSummary(const std::vector<int>& parts);
 
 /**
  * @brief Computes the adjacency list for mesh cells.
@@ -92,12 +93,12 @@ void printPartitionSummary(const std::vector<int>& parts);
  * @param mesh The mesh object
  * @return A vector of neighbor lists for each cell
  */
-std::vector<std::vector<int>> getAdjacencyList(const PolyMesh& mesh);
+MESH_PROCESSING_API std::vector<std::vector<int>> getAdjacencyList(const PolyMesh& mesh);
 
 /**
  * @brief Checks if METIS library is available.
  * @return true if METIS can be used
  */
-bool isMetisAvailable();
+MESH_PROCESSING_API bool isMetisAvailable();
 
 }  // namespace fvm

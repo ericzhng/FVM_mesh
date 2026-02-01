@@ -11,6 +11,20 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 # Option to enable METIS support
 option(USE_METIS "Enable METIS library for graph partitioning" ON)
 
+# Option to build shared libraries (DLLs on Windows, .so on Linux)
+option(BUILD_SHARED "Build shared libraries instead of static" OFF)
+
+# Set library type based on BUILD_SHARED option
+if(BUILD_SHARED)
+    set(FVM_LIBRARY_TYPE SHARED)
+    # Enable position independent code for shared libraries
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    # On Windows, automatically export all symbols (optional, we use explicit exports)
+    # set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+    set(FVM_LIBRARY_TYPE STATIC)
+endif()
+
 # =============================================================================
 # Find Dependencies
 # =============================================================================
@@ -50,6 +64,7 @@ message(STATUS "=== FVM_Mesh Configuration Summary ===")
 message(STATUS "Version: ${PROJECT_VERSION}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "Library Type: ${FVM_LIBRARY_TYPE}")
 message(STATUS "Gmsh: ${Gmsh_LIBRARIES}")
 message(STATUS "METIS: ${HAVE_METIS}")
 message(STATUS "")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mesh_processing_export.hpp"
 #include "mesh_types.hpp"
 #include <string>
 
@@ -12,7 +13,7 @@ namespace fvm {
  * These formats are widely used in parallel FVM solvers and
  * can be visualized with ParaView.
  */
-class VTKWriter {
+class MESH_PROCESSING_API VTKWriter {
 public:
     /**
      * @brief Write mesh data to legacy VTK format (.vtk).

@@ -29,11 +29,28 @@ if(WIN32 AND GMSH_DLL)
     )
 endif()
 
+# Copy our library DLLs to executable directory (Windows shared builds only)
+if(WIN32 AND BUILD_SHARED)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:mesh_generation>"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+        COMMENT "Copying mesh_generation DLL to output directory"
+    )
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:mesh_processing>"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+        COMMENT "Copying mesh_processing DLL to output directory"
+    )
+endif()
+
 # Installation
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 install(TARGETS mesh_generation mesh_processing
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin  # For Windows DLLs
 )
 install(DIRECTORY mesh_generation/ DESTINATION include/mesh_generation
     FILES_MATCHING PATTERN "*.hpp")
