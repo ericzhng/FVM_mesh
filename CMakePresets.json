@@ -99,32 +99,26 @@
         {
             "name": "debug-static",
             "displayName": "Build Debug Static",
-            "configurePreset": "debug-static"
+            "configurePreset": "debug-static",
+            "configuration": "Debug"
         },
         {
             "name": "debug-shared",
             "displayName": "Build Debug Shared",
-            "configurePreset": "debug-shared"
+            "configurePreset": "debug-shared",
+            "configuration": "Debug"
         },
         {
             "name": "release-static",
             "displayName": "Build Release Static",
-            "configurePreset": "release-static"
+            "configurePreset": "release-static",
+            "configuration": "Release"
         },
         {
             "name": "release-shared",
             "displayName": "Build Release Shared",
-            "configurePreset": "release-shared"
-        },
-        {
-            "name": "relwithdebinfo-static",
-            "displayName": "Build RelWithDebInfo Static",
-            "configurePreset": "relwithdebinfo-static"
-        },
-        {
-            "name": "relwithdebinfo-shared",
-            "displayName": "Build RelWithDebInfo Shared",
-            "configurePreset": "relwithdebinfo-shared"
+            "configurePreset": "release-shared",
+            "configuration": "Release"
         }
     ],
     "packagePresets": [
@@ -132,25 +126,29 @@
             "name": "release-static-zip",
             "displayName": "Package Release Static (ZIP)",
             "configurePreset": "release-static",
-            "generators": ["ZIP"]
+            "generators": ["ZIP"],
+            "configurations": ["Release"]
         },
         {
             "name": "release-shared-zip",
             "displayName": "Package Release Shared (ZIP)",
             "configurePreset": "release-shared",
-            "generators": ["ZIP"]
+            "generators": ["ZIP"],
+            "configurations": ["Release"]
         },
         {
             "name": "release-static-nsis",
             "displayName": "Package Release Static (NSIS Installer)",
             "configurePreset": "release-static",
-            "generators": ["NSIS"]
+            "generators": ["NSIS"],
+            "configurations": ["Release"]
         },
         {
             "name": "release-shared-nsis",
             "displayName": "Package Release Shared (NSIS Installer)",
             "configurePreset": "release-shared",
-            "generators": ["NSIS"]
+            "generators": ["NSIS"],
+            "configurations": ["Release"]
         }
     ],
     "workflowPresets": [
