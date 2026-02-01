@@ -2,30 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(findstr:*)",
-      "Bash(dir \"C:\\\\dev\\\\vcpkg\\\\installed\\\\x64-windows\\\\share\\\\gmsh\")",
-      "Bash(C:devvcpkgvcpkg list gmsh)",
       "Bash(\"C:/dev/vcpkg/vcpkg.exe\" list gmsh)",
       "Bash(\"C:/dev/vcpkg/vcpkg.exe\" search gmsh)",
       "Bash(dir:*)",
       "Bash(where:*)",
       "Bash(ls:*)",
-      "Bash(objdump:*)",
       "Bash(cmd.exe /c \"dir \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\*\"\" /b /s 2>nul | findstr /i \"\"lib.exe\"\" | findstr /i \"\"x64\"\"\")",
-      "Bash(llvm-lib:*)",
       "Bash(cmake --build:*)",
-      "Bash(./FVM_Mesh.exe:*)",
-      "Bash(./build/src/Release/FVM_Mesh.exe)",
-      "Bash(cmd.exe /c \"FVM_Mesh.exe --help\")",
-      "Bash(\"e:/2026-01/FVM_Cpp_mesh/build/src/Release/FVM_Mesh.exe\" --help)",
       "Bash(echo:*)",
-      "Bash(PATH=\".:$PATH\" ./FVM_Mesh.exe:*)",
-      "Bash(powershell.exe:*)",
-      "Bash(/c/Windows/System32/cmd.exe //c \"FVM_Mesh.exe --help\")",
-      "Bash(/c/Windows/System32/cmd.exe //c \"E:\\\\2026-01\\\\FVM_Cpp_mesh\\\\build2\\\\src\\\\Release\\\\FVM_Mesh.exe --help\")",
-      "Bash(start \"\" \"E:/2026-01/FVM_Cpp_mesh/build2/src/Release/FVM_Mesh.exe\" --help)",
       "Bash(xargs:*)",
-      "Bash(PATH=\"E:/2026-01/FVM_Cpp_mesh/build2/src/Release:$PATH\" FVM_Mesh.exe:*)",
-      "Bash(\"E:\\\\2026-01\\\\FVM_Cpp_mesh\\\\build2\\\\src\\\\Release\\\\FVM_Mesh.exe\":*)"
+      "Bash(tree:*)",
+      "Bash(git mv:*)",
+      "Bash(git -C:*)"
     ]
   }
 }

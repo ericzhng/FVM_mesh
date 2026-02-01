@@ -17,7 +17,7 @@
  * - Random: Random permutation for testing
  */
 
-#include "mesh_processing_export.hpp"
+#include "fvm_export.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -57,7 +57,7 @@ struct SparseMatrix {
 /**
  * @brief Abstract base class for cell reordering strategies.
  */
-class MESH_PROCESSING_API CellReorderStrategy {
+class FVM_API CellReorderStrategy {
 public:
     virtual ~CellReorderStrategy() = default;
 
@@ -76,7 +76,7 @@ public:
  * symmetric matrices. It starts from a node with low degree and visits
  * neighbors in degree order.
  */
-class MESH_PROCESSING_API RCMStrategy : public CellReorderStrategy {
+class FVM_API RCMStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -87,7 +87,7 @@ public:
  * The GPS algorithm finds a "good" starting node by locating a
  * pseudo-peripheral node, then applies a Cuthill-McKee ordering.
  */
-class MESH_PROCESSING_API GPSStrategy : public CellReorderStrategy {
+class FVM_API GPSStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -98,7 +98,7 @@ public:
  * Uses a priority queue with distance-based weighting to select nodes
  * during the ordering process.
  */
-class MESH_PROCESSING_API SloanStrategy : public CellReorderStrategy {
+class FVM_API SloanStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -109,7 +109,7 @@ public:
  * Uses the Fiedler vector (second smallest eigenvector of the graph
  * Laplacian) to order nodes. Implemented using power iteration.
  */
-class MESH_PROCESSING_API SpectralStrategy : public CellReorderStrategy {
+class FVM_API SpectralStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -117,7 +117,7 @@ public:
 /**
  * @brief Spatial ordering by X coordinate.
  */
-class MESH_PROCESSING_API SpatialXStrategy : public CellReorderStrategy {
+class FVM_API SpatialXStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -125,7 +125,7 @@ public:
 /**
  * @brief Spatial ordering by Y coordinate.
  */
-class MESH_PROCESSING_API SpatialYStrategy : public CellReorderStrategy {
+class FVM_API SpatialYStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -133,7 +133,7 @@ public:
 /**
  * @brief Random permutation ordering.
  */
-class MESH_PROCESSING_API RandomStrategy : public CellReorderStrategy {
+class FVM_API RandomStrategy : public CellReorderStrategy {
 public:
     std::vector<std::size_t> getOrder(const PolyMesh& mesh) override;
 };
@@ -154,7 +154,7 @@ public:
  *                 "spectral", "spatial_x", "spatial_y", "random"
  * @param numToReorder Number of cells to reorder (0 = all cells)
  */
-MESH_PROCESSING_API void renumberCells(PolyMesh& mesh, const std::string& strategy = "rcm",
+FVM_API void renumberCells(PolyMesh& mesh, const std::string& strategy = "rcm",
                    std::size_t numToReorder = 0);
 
 /**
@@ -164,7 +164,7 @@ MESH_PROCESSING_API void renumberCells(PolyMesh& mesh, const std::string& strate
  * @param strategy The renumbering strategy: "rcm", "sequential",
  *                 "reverse", "spatial_x", "spatial_y", "random"
  */
-MESH_PROCESSING_API void renumberNodes(PolyMesh& mesh, const std::string& strategy = "rcm");
+FVM_API void renumberNodes(PolyMesh& mesh, const std::string& strategy = "rcm");
 
 // =========================================================================
 // Utility Functions
@@ -176,20 +176,20 @@ MESH_PROCESSING_API void renumberNodes(PolyMesh& mesh, const std::string& strate
  * @param numCells Number of cells to include (0 = all cells)
  * @return Sparse adjacency matrix in CSR format
  */
-MESH_PROCESSING_API SparseMatrix buildCellAdjacency(const PolyMesh& mesh, std::size_t numCells = 0);
+FVM_API SparseMatrix buildCellAdjacency(const PolyMesh& mesh, std::size_t numCells = 0);
 
 /**
  * @brief Builds the node-to-node adjacency matrix from cell connectivity.
  * @param mesh The PolyMesh object
  * @return Sparse adjacency matrix in CSR format
  */
-MESH_PROCESSING_API SparseMatrix buildNodeAdjacency(const PolyMesh& mesh);
+FVM_API SparseMatrix buildNodeAdjacency(const PolyMesh& mesh);
 
 /**
  * @brief Creates a reorder strategy by name.
  * @param name Strategy name
  * @return Unique pointer to the strategy
  */
-MESH_PROCESSING_API std::unique_ptr<CellReorderStrategy> createCellReorderStrategy(const std::string& name);
+FVM_API std::unique_ptr<CellReorderStrategy> createCellReorderStrategy(const std::string& name);
 
 }  // namespace fvm

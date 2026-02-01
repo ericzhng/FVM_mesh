@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mesh_generation_export.hpp"
-#include "mesh_types.hpp"
+#include "fvm_export.hpp"
+#include "meshgen/mesh_types.hpp"
 #include <string>
 #include <tuple>
 #include <vector>
@@ -14,7 +14,7 @@ namespace fvm {
  * This class provides methods to create various 2D shapes (rectangle, circle,
  * polygon, triangle, ellipse) and compute bounding boxes.
  */
-class MESH_GENERATION_API Geometry {
+class FVM_API Geometry {
 public:
     /**
      * @brief Construct a new Geometry object.

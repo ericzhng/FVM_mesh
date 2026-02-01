@@ -47,7 +47,7 @@ struct HaloInfo {
  * global mesh, including cells owned by the current process and "halo" cells
  * from neighboring processes required for communication.
  */
-class MESH_PROCESSING_API LocalMesh : public PolyMesh {
+class FVM_API LocalMesh : public PolyMesh {
 public:
     // =========================================================================
     // Partition-Specific Data

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mesh_generation_export.hpp"
-#include "mesh_types.hpp"
+#include "fvm_export.hpp"
+#include "meshgen/mesh_types.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -14,7 +14,7 @@ namespace fvm {
  * This class handles the generation of structured, triangular, and quadrilateral
  * meshes, and provides methods for saving the generated mesh to various formats.
  */
-class MESH_GENERATION_API MeshGenerator {
+class FVM_API MeshGenerator {
 public:
     /**
      * @brief Construct a new MeshGenerator object.

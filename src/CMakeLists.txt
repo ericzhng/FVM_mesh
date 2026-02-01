@@ -1,12 +1,12 @@
 # Add library subdirectories
-add_subdirectory(mesh_generation)
-add_subdirectory(mesh_processing)
+add_subdirectory(meshgen)
+add_subdirectory(polymesh)
 
 # Main executable
 add_executable(${PROJECT_NAME} main.cpp)
 
 # Include directories for main executable
-# This allows includes like "mesh_generation/geometry.hpp"
+# This allows includes like "meshgen/geometry.hpp"
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${Gmsh_INCLUDE_DIR}
@@ -15,8 +15,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Link the libraries
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        FVM::mesh_generation
-        FVM::mesh_processing
+        FVM::meshgen
+        FVM::polymesh
 )
 
 # Copy Gmsh DLL to output directory after build (Windows only)
@@ -33,26 +33,27 @@ endif()
 if(WIN32 AND BUILD_SHARED)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:mesh_generation>"
+            "$<TARGET_FILE:meshgen>"
             "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        COMMENT "Copying mesh_generation DLL to output directory"
+        COMMENT "Copying meshgen DLL to output directory"
     )
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:mesh_processing>"
+            "$<TARGET_FILE:polymesh>"
             "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        COMMENT "Copying mesh_processing DLL to output directory"
+        COMMENT "Copying polymesh DLL to output directory"
     )
 endif()
 
 # Installation
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-install(TARGETS mesh_generation mesh_processing
+install(TARGETS meshgen polymesh
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin  # For Windows DLLs
 )
-install(DIRECTORY mesh_generation/ DESTINATION include/mesh_generation
+install(FILES fvm_export.hpp DESTINATION include)
+install(DIRECTORY meshgen/ DESTINATION include/meshgen
     FILES_MATCHING PATTERN "*.hpp")
-install(DIRECTORY mesh_processing/ DESTINATION include/mesh_processing
+install(DIRECTORY polymesh/ DESTINATION include/polymesh
     FILES_MATCHING PATTERN "*.hpp")

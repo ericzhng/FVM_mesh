@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mesh_generation_export.hpp"
+#include "fvm_export.hpp"
 #include <array>
 #include <cstdint>
 #include <string>

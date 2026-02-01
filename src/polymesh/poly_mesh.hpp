@@ -8,7 +8,7 @@
  * for mesh information required for finite volume method (FVM) solvers.
  */
 
-#include "mesh_processing_export.hpp"
+#include "fvm_export.hpp"
 #include <array>
 #include <cstddef>
 #include <map>
@@ -47,7 +47,7 @@ struct PhysicalGroup {
  * geometric properties. It can be initialized from a Gmsh .msh file and
  * analyzed to prepare for numerical simulations.
  */
-class MESH_PROCESSING_API PolyMesh {
+class FVM_API PolyMesh {
 public:
     // =========================================================================
     // Core Mesh Properties

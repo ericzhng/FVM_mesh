@@ -6,10 +6,10 @@
  * 2D mesh suitable for use as a basis for parallel FVM solvers.
  */
 
-#include "mesh_generation/geometry.hpp"
-#include "mesh_generation/mesh_generator.hpp"
-#include "mesh_generation/mesh_types.hpp"
-#include "mesh_processing/vtk_writer.hpp"
+#include "meshgen/geometry.hpp"
+#include "meshgen/mesh_generator.hpp"
+#include "meshgen/mesh_types.hpp"
+#include "polymesh/vtk_writer.hpp"
 
 #include <gmsh.h>
 #include <cmath>

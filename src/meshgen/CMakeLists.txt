@@ -1,40 +1,39 @@
-# Mesh Generation Library - Gmsh-based geometry and mesh generation
+# Meshgen Library - Gmsh-based geometry and mesh generation
 
-set(MESH_GENERATION_SOURCES
+set(MESHGEN_SOURCES
     geometry.cpp
     mesh_generator.cpp
 )
 
-set(MESH_GENERATION_HEADERS
+set(MESHGEN_HEADERS
     geometry.hpp
     mesh_generator.hpp
     mesh_types.hpp
-    mesh_generation_export.hpp
 )
 
 # Create library (STATIC or SHARED based on FVM_LIBRARY_TYPE)
-add_library(mesh_generation ${FVM_LIBRARY_TYPE} ${MESH_GENERATION_SOURCES} ${MESH_GENERATION_HEADERS})
+add_library(meshgen ${FVM_LIBRARY_TYPE} ${MESHGEN_SOURCES} ${MESHGEN_HEADERS})
 
 # Set library properties
-target_include_directories(mesh_generation
+target_include_directories(meshgen
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<INSTALL_INTERFACE:include/mesh_generation>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<INSTALL_INTERFACE:include>
     PRIVATE
         ${Gmsh_INCLUDE_DIR}
 )
 
 # Link Gmsh (required for this library)
-target_link_libraries(mesh_generation PUBLIC Gmsh::Gmsh)
-target_compile_definitions(mesh_generation PUBLIC GMSH_DLL)
+target_link_libraries(meshgen PUBLIC Gmsh::Gmsh)
+target_compile_definitions(meshgen PUBLIC GMSH_DLL)
 
 # Handle export definitions for shared/static builds
 if(BUILD_SHARED)
     # Building shared library - define EXPORTS macro
-    target_compile_definitions(mesh_generation PRIVATE MESH_GENERATION_EXPORTS)
+    target_compile_definitions(meshgen PRIVATE FVM_EXPORTS)
 
     # Set shared library properties
-    set_target_properties(mesh_generation PROPERTIES
+    set_target_properties(meshgen PROPERTIES
         # Version information
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
@@ -47,7 +46,7 @@ if(BUILD_SHARED)
 
     # On Windows, ensure runtime library is copied to output directory
     if(WIN32)
-        set_target_properties(mesh_generation PROPERTIES
+        set_target_properties(meshgen PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
             LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
             ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
@@ -55,11 +54,11 @@ if(BUILD_SHARED)
     endif()
 else()
     # Building static library - define STATIC macro
-    target_compile_definitions(mesh_generation PUBLIC MESH_GENERATION_STATIC)
+    target_compile_definitions(meshgen PUBLIC FVM_STATIC)
 endif()
 
 # Set C++ standard
-target_compile_features(mesh_generation PUBLIC cxx_std_17)
+target_compile_features(meshgen PUBLIC cxx_std_17)
 
 # Export alias for easier usage
-add_library(FVM::mesh_generation ALIAS mesh_generation)
+add_library(FVM::meshgen ALIAS meshgen)
